@@ -7,7 +7,7 @@ import {
   ScrollView, 
   Alert 
 } from 'react-native';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
 import { requestStartDuty } from '../firebase/api';
@@ -92,9 +92,32 @@ export default function StartDutyScreen({ navigation }) {
       return;
     }
 
-    if (assignedBike?.currentOdometer && Number(odometer) < Number(assignedBike.currentOdometer)) {
-      Alert.alert('Invalid Odometer', `Meter reading cannot be less than previous odometer (${assignedBike.currentOdometer} km).`);
+    const prevOdo = Number(assignedBike?.currentOdometer || 0);
+    const enteredOdo = Number(odometer);
+
+    if (prevOdo > 0 && enteredOdo < prevOdo) {
+      Alert.alert('Invalid Odometer', `Meter reading cannot be less than previous odometer (${prevOdo} km).`);
       return;
+    }
+
+    // Detect Off-Duty Personal Mileage Leakage
+    const offDutyDeltaKm = Math.max(0, enteredOdo - prevOdo);
+    if (prevOdo > 0 && offDutyDeltaKm > 2 && !driverProfile?.hasApprovedPersonalUse) {
+      try {
+        await addDoc(collection(db, 'securityAlerts'), {
+          type: 'OFF_DUTY_UNAUTHORIZED_MILEAGE',
+          driverId: currentUser.uid,
+          bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+          severity: 'HIGH',
+          message: `Vehicle recorded ${offDutyDeltaKm} km of off-duty movement since last return without prior approval.`,
+          deltaKm: offDutyDeltaKm,
+          previousOdometer: prevOdo,
+          startOdometer: enteredOdo,
+          timestamp: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('Off-duty alert log error:', e);
+      }
     }
 
     setLoading(true);
@@ -107,7 +130,7 @@ export default function StartDutyScreen({ navigation }) {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude
         } : { latitude: 13.0827, longitude: 80.2707 },
-        pickupOdometer: Number(odometer),
+        pickupOdometer: enteredOdo,
         pickupFuelCharge: Number(fuelCharge) || 100,
         bikeCondition: condition,
         deviceId: driverProfile?.boundDeviceId || 'android_device_company'

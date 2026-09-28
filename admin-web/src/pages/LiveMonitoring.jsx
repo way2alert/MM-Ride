@@ -62,6 +62,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
     if (filterMode === 'MOVING') return speed > 0;
     if (filterMode === 'IDLE') return speed === 0;
     if (filterMode === 'OVERSPEED') return speed > speedThreshold;
+    if (filterMode === 'OFF_DUTY_MOVING') return (!d.isCurrentlyOnDuty && !d.currentDutyId) && (speed > 5);
     return true; // 'ALL'
   });
 
@@ -159,6 +160,24 @@ export default function LiveMonitoring({ onSelectDriver }) {
         code: 'COMBINATION_A',
         title: 'Phone Offline + Bike Moving',
         detail: `Driver phone offline (${Math.round((Date.now() - lastUpdateMs) / 60000)}m ago) but vehicle is in motion at ${speed} km/h.`
+      };
+    }
+
+    // Unauthorized Personal Use: Vehicle Moving While Duty OFF
+    if (!isOnDuty && speed > 5) {
+      if (driver.hasApprovedPersonalUse) {
+        return {
+          level: 'NORMAL',
+          code: 'APPROVED_PERSONAL_USE',
+          title: 'Approved Personal Trip 🟢',
+          detail: 'Driver operating under authorized personal use permit.'
+        };
+      }
+      return {
+        level: 'CRITICAL',
+        code: 'DUTY_OFF_MOVING',
+        title: 'Vehicle Moving While Duty OFF 🚨',
+        detail: `Vehicle in motion at ${speed} km/h while driver duty is OFF (Unauthorized personal use detected).`
       };
     }
 
@@ -389,6 +408,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
               onClick={() => setFilterMode('OVERSPEED')}
             >
               ⚡ Speed Alert (&gt;{speedThreshold} km/h)
+            </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'OFF_DUTY_MOVING' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'OFF_DUTY_MOVING' ? '#FFF' : '#FCA5A5' }}
+              onClick={() => setFilterMode('OFF_DUTY_MOVING')}
+              title="Detect vehicles in motion with Duty OFF (Personal Use Violation)"
+            >
+              🚨 Off-Duty Moving
             </button>
           </div>
         </div>
