@@ -156,6 +156,172 @@ export default function Settings() {
           </div>
         </form>
       </div>
+
+      {/* Android Enterprise MDM & Device Tamper Lock (Anti-Uninstall / Anti-Clear Data) */}
+      <div className="panel" style={{ maxWidth: 800, marginTop: '2rem' }}>
+        <div className="panel-header">
+          <div className="panel-title">
+            <ShieldAlert size={18} color="#EF4444" />
+            <span>Android Enterprise MDM – Anti-Tamper & Kiosk Policy (Problem #6)</span>
+          </div>
+          <span className="badge badge-danger">Device Owner Enforced</span>
+        </div>
+
+        <p style={{ color: '#94A3B8', fontSize: '0.85rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+          Standard user apps cannot block uninstallation or cache clearing in Android. For company-owned fleet phones, 
+          provision the device as an <strong>Android Enterprise Device Owner</strong>. This removes the driver's ability 
+          to uninstall the app, clear storage/cache, force-stop, or factory reset.
+        </p>
+
+        {/* Policy Badges */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <div style={{ background: '#0F172A', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.75rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Uninstall Prevention</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10B981', marginTop: 4 }}>
+              ✓ BLOCKED (OS Level)
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#64748B', marginTop: 2 }}>uninstallAppsDisabled: true</div>
+          </div>
+
+          <div style={{ background: '#0F172A', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.75rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Clear Data & Cache</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10B981', marginTop: 4 }}>
+              ✓ BLOCKED (OS Level)
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#64748B', marginTop: 2 }}>userControlDisabled: true</div>
+          </div>
+
+          <div style={{ background: '#0F172A', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.75rem' }}>
+            <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Force Stop & Reset</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10B981', marginTop: 4 }}>
+              ✓ BLOCKED (OS Level)
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#64748B', marginTop: 2 }}>factoryResetDisabled: true</div>
+          </div>
+        </div>
+
+        {/* Driver Device Experience Simulation */}
+        <div style={{ 
+          background: 'rgba(239, 68, 68, 0.05)', 
+          border: '1px solid rgba(239, 68, 68, 0.2)', 
+          borderRadius: 8, 
+          padding: '1rem',
+          marginBottom: '1.5rem'
+        }}>
+          <h5 style={{ color: '#FCA5A5', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
+            Driver Phone Screen Behavior (When Driver attempts Tampering)
+          </h5>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ background: '#020617', padding: '0.75rem', borderRadius: 6, border: '1px dashed #334155' }}>
+              <div style={{ color: '#F87171', fontSize: '0.75rem', fontWeight: 700, marginBottom: 4 }}>
+                1. Driver taps "Uninstall"
+              </div>
+              <div style={{ color: '#E2E8F0', fontSize: '0.72rem', background: '#1E293B', padding: '6px 8px', borderRadius: 4 }}>
+                ⚠️ <strong>"Action not allowed"</strong><br />
+                <em>"MM Ride Driver is managed by your organization. You cannot uninstall this app."</em>
+              </div>
+            </div>
+
+            <div style={{ background: '#020617', padding: '0.75rem', borderRadius: 6, border: '1px dashed #334155' }}>
+              <div style={{ color: '#F87171', fontSize: '0.75rem', fontWeight: 700, marginBottom: 4 }}>
+                2. Driver taps "Clear Storage / Clear Cache"
+              </div>
+              <div style={{ color: '#E2E8F0', fontSize: '0.72rem', background: '#1E293B', padding: '6px 8px', borderRadius: 4 }}>
+                ⚠️ <strong>"Action not allowed"</strong><br />
+                <em>"Storage controls are disabled for MM Ride Driver by your administrator."</em>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Google Android Management API Policy JSON Viewer */}
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <label className="form-label" style={{ marginBottom: 0 }}>
+              Google Android Management API (AMAPI) Production Policy JSON
+            </label>
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+              onClick={() => {
+                const policyJson = JSON.stringify({
+                  "applications": [
+                    {
+                      "packageName": "com.mmride.driver",
+                      "installType": "REQUIRED_FORCED",
+                      "defaultPermissionPolicy": "GRANT",
+                      "userControlSettings": {
+                        "userControlDisabled": true
+                      }
+                    },
+                    { "packageName": "com.olacabs.driver", "installType": "FORCE_INSTALLED" },
+                    { "packageName": "com.ubercab.driver", "installType": "FORCE_INSTALLED" },
+                    { "packageName": "com.rapido.driver", "installType": "FORCE_INSTALLED" },
+                    { "packageName": "com.google.android.apps.maps", "installType": "FORCE_INSTALLED" }
+                  ],
+                  "uninstallAppsDisabled": true,
+                  "factoryResetDisabled": true,
+                  "safeBootDisabled": true,
+                  "developerSettingsDisabled": true,
+                  "locationMode": "LOCATION_ENFORCED",
+                  "modifyAccountsDisabled": true,
+                  "adjustVolumeDisabled": false
+                }, null, 2);
+                navigator.clipboard.writeText(policyJson);
+                alert("AMAPI Policy JSON copied to clipboard!");
+              }}
+            >
+              Copy Policy JSON
+            </button>
+          </div>
+          <pre style={{ 
+            background: '#020617', 
+            color: '#38BDF8', 
+            padding: '1rem', 
+            borderRadius: 8, 
+            fontSize: '0.72rem', 
+            overflowX: 'auto',
+            maxHeight: 220,
+            border: '1px solid #1E293B'
+          }}>
+{`{
+  "applications": [
+    {
+      "packageName": "com.mmride.driver",
+      "installType": "REQUIRED_FORCED",
+      "defaultPermissionPolicy": "GRANT",
+      "userControlSettings": {
+        "userControlDisabled": true  // <-- BLOCKS CLEAR CACHE & CLEAR DATA & FORCE STOP
+      }
+    },
+    { "packageName": "com.olacabs.driver", "installType": "FORCE_INSTALLED" },
+    { "packageName": "com.ubercab.driver", "installType": "FORCE_INSTALLED" },
+    { "packageName": "com.rapido.driver", "installType": "FORCE_INSTALLED" },
+    { "packageName": "com.google.android.apps.maps", "installType": "FORCE_INSTALLED" }
+  ],
+  "uninstallAppsDisabled": true,       // <-- BLOCKS UNINSTALL ON ALL APPS
+  "factoryResetDisabled": true,       // <-- BLOCKS SYSTEM RESET
+  "safeBootDisabled": true,           // <-- BLOCKS SAFE MODE BYPASS
+  "developerSettingsDisabled": true,  // <-- BLOCKS USB DEBUGGING & MOCK LOCATION
+  "locationMode": "LOCATION_ENFORCED" // <-- BLOCKS TURNING OFF GPS
+}`}
+          </pre>
+        </div>
+
+        {/* 6-Tap QR Provisioning Guide */}
+        <div style={{ background: '#0F172A', padding: '0.85rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#F8FAFC', marginBottom: 4 }}>
+            📲 6-Tap Device Owner Provisioning (Depot Setup):
+          </div>
+          <ol style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, paddingLeft: '1.25rem', lineHeight: 1.6 }}>
+            <li>Power on brand-new or factory-reset Android device.</li>
+            <li>Tap the empty white space on the "Hi there / Welcome" screen <strong>6 times consecutively</strong>.</li>
+            <li>Scan the MDM Enrollment QR Code generated from Google AMAPI or Headwind MDM.</li>
+            <li>Connect to Wi-Fi. The phone automatically downloads the policy, installs MM Ride, and permanently locks down!</li>
+          </ol>
+        </div>
+      </div>
     </div>
   );
 }
