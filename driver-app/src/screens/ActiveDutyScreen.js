@@ -66,6 +66,12 @@ export default function ActiveDutyScreen({ navigation }) {
   const [countdown, setCountdown] = useState(90);
   const [submittingSelfie, setSubmittingSelfie] = useState(false);
 
+  // Problem 11: Sudden Deceleration & Possible Accident / Welfare State
+  const [prevSpeed, setPrevSpeed] = useState(0);
+  const [highSpeedTimestamp, setHighSpeedTimestamp] = useState(0);
+  const [showWelfareModal, setShowWelfareModal] = useState(false);
+  const [welfareCountdown, setWelfareCountdown] = useState(60);
+
   // Continuous Live GPS Heartbeat & Test Ride Movement Telemetry
   useEffect(() => {
     if (!driverProfile?.id || !activeDutySession?.id) return;
@@ -206,6 +212,122 @@ export default function ActiveDutyScreen({ navigation }) {
       }).catch(console.warn);
     }
   }, [isGeofenceBreach, geofenceBreachLogged, driverProfile?.id, distFromHubKm, curLat, curLng]);
+
+  // Sudden Deceleration Detector (e.g. >30 km/h drops to 0 km/h within 15s)
+  useEffect(() => {
+    if (currentSpeed > 30) {
+      setPrevSpeed(currentSpeed);
+      setHighSpeedTimestamp(Date.now());
+    } else if (currentSpeed === 0 && prevSpeed > 30) {
+      const timeSinceHigh = Date.now() - highSpeedTimestamp;
+      if (timeSinceHigh < 20000 && !showWelfareModal) {
+        setShowWelfareModal(true);
+        setWelfareCountdown(60);
+      }
+    }
+  }, [currentSpeed, prevSpeed, highSpeedTimestamp, showWelfareModal]);
+
+  // Welfare countdown timer
+  useEffect(() => {
+    if (!showWelfareModal) return;
+    const timer = setInterval(() => {
+      setWelfareCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleWelfareTimeout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [showWelfareModal]);
+
+  const handleWelfareTimeout = async () => {
+    setShowWelfareModal(false);
+    if (!driverProfile?.id) return;
+    try {
+      await updateDoc(doc(db, 'drivers', driverProfile.id), {
+        abnormalStopAlert: {
+          active: true,
+          initialSpeed: prevSpeed,
+          stoppedAt: new Date().toISOString(),
+          location: currentLocation,
+          driverStatus: 'UNRESPONSIVE_AFTER_DECEL',
+          durationStoppedMinutes: 1
+        },
+        previousRecordedSpeed: prevSpeed
+      });
+      await addDoc(collection(db, 'incidents'), {
+        driverId: driverProfile.id,
+        bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+        type: 'POSSIBLE_ACCIDENT_ABNORMAL_STOP',
+        description: `Sudden deceleration from ${prevSpeed} km/h to 0 km/h. Driver did not acknowledge safety check within 60s.`,
+        gps: currentLocation,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn('Welfare timeout log error:', e);
+    }
+  };
+
+  const handleWelfareResponse = async (status) => {
+    setShowWelfareModal(false);
+    const recordedInitialSpeed = prevSpeed;
+    setPrevSpeed(0);
+    if (!driverProfile?.id) return;
+
+    if (status === 'SAFE') {
+      await updateDoc(doc(db, 'drivers', driverProfile.id), {
+        'abnormalStopAlert.active': false,
+        previousRecordedSpeed: 0
+      }).catch(console.warn);
+      Alert.alert('Glad you are safe! 👍', 'Shift tracking continuing normally.');
+    } else if (status === 'BREAKDOWN') {
+      await updateDoc(doc(db, 'drivers', driverProfile.id), {
+        abnormalStopAlert: {
+          active: true,
+          initialSpeed: recordedInitialSpeed,
+          stoppedAt: new Date().toISOString(),
+          location: currentLocation,
+          driverStatus: 'REPORTED_BREAKDOWN',
+          durationStoppedMinutes: 1
+        }
+      }).catch(console.warn);
+      await addDoc(collection(db, 'incidents'), {
+        driverId: driverProfile.id,
+        bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+        type: 'BREAKDOWN_REPORTED',
+        description: 'Driver reported vehicle breakdown / mechanical issue after sudden halt.',
+        gps: currentLocation,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString()
+      }).catch(console.warn);
+      Alert.alert('Breakdown Logged 🛠️', 'Support hub alerted. Contact depot if towing is needed.');
+    } else if (status === 'ACCIDENT') {
+      await updateDoc(doc(db, 'drivers', driverProfile.id), {
+        abnormalStopAlert: {
+          active: true,
+          initialSpeed: recordedInitialSpeed,
+          stoppedAt: new Date().toISOString(),
+          location: currentLocation,
+          driverStatus: 'REPORTED_ACCIDENT',
+          durationStoppedMinutes: 1
+        }
+      }).catch(console.warn);
+      await addDoc(collection(db, 'incidents'), {
+        driverId: driverProfile.id,
+        bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+        type: 'ACCIDENT_REPORTED',
+        description: 'Driver confirmed accident / distress after sudden deceleration.',
+        gps: currentLocation,
+        status: 'CRITICAL',
+        createdAt: new Date().toISOString()
+      }).catch(console.warn);
+      Alert.alert('EMERGENCY DISPATCHED 🚨', 'Operations control alerted. Medical & recovery teams notified.');
+    }
+  };
 
   // Countdown timer for identity challenge
   useEffect(() => {
@@ -1141,6 +1263,101 @@ export default function ActiveDutyScreen({ navigation }) {
               style={{ padding: 8, alignItems: 'center' }}
             >
               <Text style={{ color: '#94A3B8', fontWeight: '600', fontSize: 12 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Sudden Deceleration / Safety Welfare Modal (Problem 11) */}
+      <Modal
+        visible={showWelfareModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { borderColor: '#F59E0B', borderWidth: 2 }]}>
+            <Text style={{ fontSize: 36, marginBottom: 6 }}>⚠️</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: '#FCD34D', textAlign: 'center' }}>
+              SAFETY WELFARE CHECK
+            </Text>
+            <Text style={{ fontSize: 13, color: '#F59E0B', fontWeight: '700', marginBottom: 4 }}>
+              நீங்கள் நலமாக உள்ளீர்களா?
+            </Text>
+            <Text style={{ fontSize: 12, color: '#CBD5E1', textAlign: 'center', lineHeight: 16, marginBottom: 12 }}>
+              Sudden deceleration detected ({prevSpeed} km/h ➔ 0 km/h). Please confirm your safety within {welfareCountdown}s:
+            </Text>
+
+            {/* Countdown Badge */}
+            <View style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginBottom: 16 }}>
+              <Text style={{ color: '#FCD34D', fontWeight: '800', fontSize: 12 }}>
+                ⏱️ Auto-escalating in {welfareCountdown} seconds
+              </Text>
+            </View>
+
+            {/* Option 1: Safe */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#065F46',
+                borderColor: '#10B981',
+                borderWidth: 1.5,
+                borderRadius: 12,
+                padding: 12,
+                width: '100%',
+                alignItems: 'center',
+                marginBottom: 10
+              }}
+              onPress={() => handleWelfareResponse('SAFE')}
+            >
+              <Text style={{ color: '#A7F3D0', fontWeight: '800', fontSize: 14 }}>
+                🟢 I AM SAFE (நான் நலமாக உள்ளேன்)
+              </Text>
+              <Text style={{ color: '#D1FAE5', fontSize: 10, marginTop: 2 }}>
+                Normal stop, traffic signal, or brief tea break
+              </Text>
+            </TouchableOpacity>
+
+            {/* Option 2: Breakdown */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#78350F',
+                borderColor: '#F59E0B',
+                borderWidth: 1.5,
+                borderRadius: 12,
+                padding: 12,
+                width: '100%',
+                alignItems: 'center',
+                marginBottom: 10
+              }}
+              onPress={() => handleWelfareResponse('BREAKDOWN')}
+            >
+              <Text style={{ color: '#FDE68A', fontWeight: '800', fontSize: 13 }}>
+                🟡 VEHICLE BREAKDOWN / PUNCTURE
+              </Text>
+              <Text style={{ color: '#FEF3C7', fontSize: 10, marginTop: 2 }}>
+                Tyre puncture, chain slip, or mechanical fault (Need towing)
+              </Text>
+            </TouchableOpacity>
+
+            {/* Option 3: Accident */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#7F1D1D',
+                borderColor: '#EF4444',
+                borderWidth: 1.5,
+                borderRadius: 12,
+                padding: 12,
+                width: '100%',
+                alignItems: 'center'
+              }}
+              onPress={() => handleWelfareResponse('ACCIDENT')}
+            >
+              <Text style={{ color: '#FECACA', fontWeight: '900', fontSize: 13 }}>
+                🚨 ACCIDENT / NEED EMERGENCY HELP
+              </Text>
+              <Text style={{ color: '#FEE2E2', fontSize: 10, marginTop: 2 }}>
+                Road collision or injury. Dispatch control room & 112
+              </Text>
             </TouchableOpacity>
           </View>
         </View>

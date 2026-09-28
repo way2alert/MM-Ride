@@ -72,6 +72,11 @@ export default function LiveMonitoring({ onSelectDriver }) {
       const distKm = Math.sqrt(Math.pow((lat - hubLat) * 111, 2) + Math.pow((lng - hubLng) * 111, 2));
       return distKm > 45 || !!d.geofenceBreach;
     }
+    if (filterMode === 'ACCIDENT_STOP') {
+      const lastPing = loc?.timestamp ? new Date(loc.timestamp).getTime() : 0;
+      const isStill = speed === 0 && ((Date.now() - lastPing) > (3 * 60 * 1000));
+      return !!d.abnormalStopAlert?.active || ((d.isCurrentlyOnDuty || d.currentDutyId) && isStill && ((d.previousRecordedSpeed || 0) > 30));
+    }
     return true; // 'ALL'
   });
 
@@ -219,6 +224,18 @@ export default function LiveMonitoring({ onSelectDriver }) {
           detail: `Vehicle located ${distKm.toFixed(1)} km outside authorized metropolitan perimeter (heading towards outer district/border).`
         };
       }
+    }
+
+    // Problem 11: Possible Accident / Abnormal Stop (Sudden Deceleration + Stationary + Offline/Unresponsive)
+    if (driver.abnormalStopAlert?.active || (isOnDuty && speed === 0 && isPhoneOffline && (driver.previousRecordedSpeed || 0) > 30)) {
+      const initialSpd = driver.abnormalStopAlert?.initialSpeed || driver.previousRecordedSpeed || 45;
+      const stoppedMins = driver.abnormalStopAlert?.durationStoppedMinutes || Math.round((Date.now() - lastUpdateMs) / 60000);
+      return {
+        level: 'WARNING',
+        code: 'POSSIBLE_ACCIDENT_ABNORMAL_STOP',
+        title: 'Possible Accident / Abnormal Stop ⚠️',
+        detail: `Vehicle experienced sudden deceleration from ${initialSpd} km/h to 0 km/h and has remained stationary for ${stoppedMins} mins with phone unresponsive.`
+      };
     }
 
     if (isImmobilized) {
@@ -456,6 +473,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
             >
               🚧 Border Breach
             </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'ACCIDENT_STOP' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(245, 158, 11, 0.5)', color: filterMode === 'ACCIDENT_STOP' ? '#FFF' : '#FCD34D' }}
+              onClick={() => setFilterMode('ACCIDENT_STOP')}
+              title="Detect sudden deceleration from high speed to 0 km/h with prolonged stationary state (Possible Accident / Breakdown)"
+            >
+              ⚠️ Possible Accident / Stop
+            </button>
           </div>
         </div>
 
@@ -569,6 +594,66 @@ export default function LiveMonitoring({ onSelectDriver }) {
                   </span>
                 </div>
               </div>
+
+              {/* Emergency Welfare & Possible Accident Protocol */}
+              {(selectedDriver.abnormalStopAlert?.active || evaluateAbscondingRisk(selectedDriver).code === 'POSSIBLE_ACCIDENT_ABNORMAL_STOP') && (
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.5)',
+                  borderRadius: 8,
+                  padding: '0.85rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  marginBottom: '0.5rem'
+                }}>
+                  <div style={{ color: '#FCD34D', fontWeight: 'bold', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    ⚠️ Welfare Check (Possible Accident / Abnormal Stop)
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#CBD5E1', lineHeight: 1.4 }}>
+                    Sudden deceleration detected (High Speed ➔ 0 km/h). Driver or phone unresponsive. Immediate welfare check required:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: 2 }}>
+                    {selectedDriver.mobileNumber && (
+                      <a href={`tel:${selectedDriver.mobileNumber}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FFF' }}>
+                        📞 Call Driver
+                      </a>
+                    )}
+                    {selectedDriver.emergencyContactPhone && (
+                      <a href={`tel:${selectedDriver.emergencyContactPhone}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FCA5A5', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                        ❤️ Family Contact
+                      </a>
+                    )}
+                  </div>
+                  {selectedDriver.lastKnownLocation?.latitude && (
+                    <a 
+                      href={`https://www.google.com/maps/search/hospital/@${selectedDriver.lastKnownLocation.latitude},${selectedDriver.lastKnownLocation.longitude},15z`}
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="btn btn-secondary btn-sm"
+                      style={{ textAlign: 'center', textDecoration: 'none', color: '#38BDF8' }}
+                    >
+                      🏥 Find Nearby Hospitals (3km)
+                    </a>
+                  )}
+                  <button
+                    className="btn btn-success btn-sm"
+                    style={{ marginTop: 2 }}
+                    onClick={async () => {
+                      try {
+                        await updateDoc(doc(db, 'drivers', selectedDriver.id), {
+                          abnormalStopAlert: { active: false, resolvedAt: new Date().toISOString() }
+                        });
+                        alert('Welfare check resolved: Driver marked safe / breakdown addressed.');
+                      } catch (e) {
+                        alert(e.message);
+                      }
+                    }}
+                  >
+                    ✓ Mark Driver Safe / False Alarm
+                  </button>
+                </div>
+              )}
 
               {/* Anti-Theft Remote Fleet Security Controls */}
               <div style={{
