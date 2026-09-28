@@ -68,48 +68,23 @@ export default function BikeHandoverScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
 
-  // Handle capture of 360° photo
+  // Handle capture of 360° photo (Strict Live Camera ONLY - Anti-Fraud Enforced)
   const handleCapturePhoto = async (angleKey) => {
     try {
-      Alert.alert(
-        'Upload Photo',
-        `Select source for ${angleKey.toUpperCase()} angle photo:`,
-        [
-          {
-            text: 'Camera 📸',
-            onPress: async () => {
-              const perm = await ImagePicker.requestCameraPermissionsAsync();
-              if (!perm.granted) {
-                Alert.alert('Permission Denied', 'Camera access is required for vehicle inspection.');
-                return;
-              }
-              const res = await ImagePicker.launchCameraAsync({
-                allowsEditing: true,
-                quality: 0.7
-              });
-              if (!res.canceled && res.assets && res.assets.length > 0) {
-                setPhotos(prev => ({ ...prev, [angleKey]: res.assets[0].uri }));
-              }
-            }
-          },
-          {
-            text: 'Gallery 🖼️',
-            onPress: async () => {
-              const res = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                allowsEditing: true,
-                quality: 0.7
-              });
-              if (!res.canceled && res.assets && res.assets.length > 0) {
-                setPhotos(prev => ({ ...prev, [angleKey]: res.assets[0].uri }));
-              }
-            }
-          },
-          { text: 'Cancel', style: 'cancel' }
-        ]
-      );
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission Denied', 'Camera access is strictly required for live vehicle inspection. Gallery upload is prohibited to prevent fraud.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.7
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setPhotos(prev => ({ ...prev, [angleKey]: res.assets[0].uri }));
+      }
     } catch (e) {
-      Alert.alert('Photo Error', e.message);
+      Alert.alert('Live Camera Error', e.message);
     }
   };
 

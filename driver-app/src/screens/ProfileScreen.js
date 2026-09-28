@@ -73,12 +73,14 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Device Security & Integrity Binding</Text>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Device ID:</Text>
-            <Text style={styles.monoVal}>{Device.osBuildId || Device.modelName || 'device_android_bound'}</Text>
+            <Text style={styles.rowLabel}>Company Bound Device:</Text>
+            <Text style={styles.monoVal}>
+              {driverProfile?.boundDeviceId ? driverProfile.boundDeviceId.slice(-8) : 'Pending Hub Handover'}
+            </Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>Device Model:</Text>
-            <Text style={styles.rowVal}>{Device.modelName || 'Android Phone'}</Text>
+            <Text style={styles.rowVal}>{driverProfile?.boundDeviceModel || Device.modelName || 'Android Phone'}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.rowLabel}>App Version:</Text>

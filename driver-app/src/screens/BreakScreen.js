@@ -60,7 +60,7 @@ export default function BreakScreen({ navigation }) {
       await endDutyBreak({
         breakId: breakId || activeDutySession.currentBreakId,
         dutyId: activeDutySession.id,
-        startTime: new Date().toISOString()
+        startTime: null
       });
 
       setIsOnBreak(false);

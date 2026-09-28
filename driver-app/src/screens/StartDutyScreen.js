@@ -110,7 +110,7 @@ export default function StartDutyScreen({ navigation }) {
         pickupOdometer: Number(odometer),
         pickupFuelCharge: Number(fuelCharge) || 100,
         bikeCondition: condition,
-        deviceId: 'android_device_bound'
+        deviceId: driverProfile?.boundDeviceId || 'android_device_company'
       });
 
       Alert.alert('Duty Shift Started! 🚀', 'Your shift has commenced. Live GPS monitoring is now transmitting to Operations.', [

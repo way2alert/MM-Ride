@@ -71,6 +71,11 @@ export default function Drivers({ onSelectDriver }) {
       } else if (type === 'CLOSE') {
         updates.accountStatus = 'ACCOUNT_CLOSED';
         auditAction = 'DRIVER_ACCOUNT_CLOSED';
+      } else if (type === 'RESET_DEVICE') {
+        updates.boundDeviceId = null;
+        updates.boundDeviceModel = null;
+        updates.boundAt = null;
+        auditAction = 'DRIVER_DEVICE_UNBOUND';
       }
 
       await updateDoc(driverRef, updates);
@@ -229,6 +234,17 @@ export default function Drivers({ onSelectDriver }) {
                           title="Reactivate Driver"
                         >
                           <RotateCcw size={14} /> Reactivate
+                        </button>
+                      )}
+
+                      {d.boundDeviceId && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ borderColor: 'rgba(245, 158, 11, 0.4)', color: '#FBBF24' }}
+                          onClick={() => setActionModal({ isOpen: true, type: 'RESET_DEVICE', driver: d, reason: 'Company phone replacement' })}
+                          title={`Bound to hardware ID [${d.boundDeviceId.slice(-6)}]. Click to unbind.`}
+                        >
+                          📱 Unbind Phone
                         </button>
                       )}
                     </div>

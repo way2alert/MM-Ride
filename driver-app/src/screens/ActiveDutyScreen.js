@@ -72,7 +72,7 @@ export default function ActiveDutyScreen({ navigation }) {
           longitude: lng,
           speed,
           isMock: isSimulatingMovement,
-          deviceId: 'android_telemetry_live'
+          deviceId: driverProfile?.boundDeviceId || 'android_telemetry_live'
         });
       } catch (err) {
         // silent

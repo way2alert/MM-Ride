@@ -26,15 +26,43 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
 
   const handlePickProof = async () => {
     try {
-      const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8
-      });
-
-      if (!res.canceled && res.assets && res.assets.length > 0) {
-        setImageUri(res.assets[0].uri);
-      }
+      Alert.alert(
+        'Upload Earnings Proof',
+        'Choose how to attach your Ola/Uber/Rapido summary:',
+        [
+          {
+            text: 'Screenshot from Gallery 📱',
+            onPress: async () => {
+              const res = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.8
+              });
+              if (!res.canceled && res.assets && res.assets.length > 0) {
+                setImageUri(res.assets[0].uri);
+              }
+            }
+          },
+          {
+            text: 'Take Live Photo 📸',
+            onPress: async () => {
+              const perm = await ImagePicker.requestCameraPermissionsAsync();
+              if (!perm.granted) {
+                Alert.alert('Permission Denied', 'Camera permission required.');
+                return;
+              }
+              const res = await ImagePicker.launchCameraAsync({
+                allowsEditing: true,
+                quality: 0.8
+              });
+              if (!res.canceled && res.assets && res.assets.length > 0) {
+                setImageUri(res.assets[0].uri);
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } catch (e) {
       Alert.alert('Error', e.message);
     }
@@ -48,18 +76,12 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
 
     setLoading(true);
     try {
-      let blob = null;
-      if (imageUri) {
-        const resp = await fetch(imageUri);
-        blob = await resp.blob();
-      }
-
       await submitDailyRideEarnings({
         driverId: currentUser.uid,
         date,
         grossIncome: Number(grossIncome),
         platformCharges: Number(platformCharges || 0),
-        blob,
+        uri: imageUri,
         fileName: 'platform_summary.jpg'
       });
 

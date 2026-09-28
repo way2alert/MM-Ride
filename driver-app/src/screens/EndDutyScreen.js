@@ -122,7 +122,7 @@ export default function EndDutyScreen({ navigation }) {
         earningsAuditAcknowledged: true,
         emergencyOverride,
         emergencyOverrideReason: overrideReason,
-        deviceId: 'android_device_bound'
+        deviceId: driverProfile?.boundDeviceId || 'android_device_company'
       });
 
       Alert.alert(

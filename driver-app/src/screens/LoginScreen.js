@@ -161,18 +161,19 @@ export default function LoginScreen({ navigation }) {
       if (driverSnap.exists()) {
         const dData = driverSnap.data();
 
-        // Check if account is bound to another hardware device
+        // Enforce Device Binding for approved / active drivers
         if (dData.boundDeviceId && dData.boundDeviceId !== hardwareId) {
           await auth.signOut();
           Alert.alert(
             'Unauthorized Device (அங்கீகரிக்கப்படாத சாதனம்)',
-            `This driver account is bound to Company Device ID [${dData.boundDeviceId.slice(-6)}].\n\nYou cannot log in from a personal or unapproved phone.\n\nஇந்த கணக்கு நிறுவனம் வழங்கிய அதிகாரப்பூர்வ மொபைலில் மட்டுமே இயங்கும். ஓனரை தொடர்பு கொள்ளவும்.`
+            `This driver account is bound to Company Device ID [${dData.boundDeviceId.slice(-6)}].\n\nYou cannot log in from an unapproved or personal phone.\n\nஇந்த கணக்கு நிறுவனம் வழங்கிய அதிகாரப்பூர்வ மொபைலில் மட்டுமே இயங்கும். ஓனரை தொடர்பு கொள்ளவும்.`
           );
           return;
         }
 
-        // Auto-bind device on first approved shift if not bound
-        if (!dData.boundDeviceId) {
+        // Auto-bind device on vehicle assignment or first active shift if not already bound
+        const isReadyForBinding = ['BIKE_ASSIGNED', 'BIKE_HANDOVER_PENDING', 'ACTIVE_DRIVER'].includes(dData.accountStatus);
+        if (!dData.boundDeviceId && isReadyForBinding) {
           await updateDoc(driverRef, {
             boundDeviceId: hardwareId,
             boundDeviceModel: deviceModel,
@@ -180,15 +181,15 @@ export default function LoginScreen({ navigation }) {
           });
         }
       } else {
+        // Initial registration: Do not prematurely lock to driver's personal phone
         await setDoc(driverRef, {
           mobileNumber: cleanedPhone,
           authPhone: user.phoneNumber || `+91${cleanedPhone}`,
           verificationStatus: 'PENDING',
           approvalStatus: 'PENDING',
           accountStatus: 'REGISTERED',
-          boundDeviceId: hardwareId,
-          boundDeviceModel: deviceModel,
-          boundAt: new Date().toISOString(),
+          boundDeviceId: null,
+          boundDeviceModel: null,
           registeredAt: new Date().toISOString()
         }, { merge: true });
       }
