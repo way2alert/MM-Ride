@@ -9,7 +9,8 @@ import {
   TextInput,
   Modal,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
+  Linking
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, query, where, getDocs, updateDoc, doc, onSnapshot, addDoc } from 'firebase/firestore';
@@ -37,6 +38,10 @@ export default function ActiveDutyScreen({ navigation }) {
   const [submittingReason, setSubmittingReason] = useState(false);
   const [isSimulatingMovement, setIsSimulatingMovement] = useState(false);
   const [simStep, setSimStep] = useState(0);
+
+  // Anti-Theft & Remote Immobilizer State
+  const [isImmobilized, setIsImmobilized] = useState(false);
+  const [geofenceBreachLogged, setGeofenceBreachLogged] = useState(false);
 
   // In-Shift Live Face / Selfie Verification State
   const [identityPrompt, setIdentityPrompt] = useState(null);
@@ -123,12 +128,17 @@ export default function ActiveDutyScreen({ navigation }) {
     return () => clearInterval(idleTimer);
   }, [driverProfile?.id]);
 
-  // Listen for Live Identity / Selfie Challenges triggered by Admin or Policy
+  // Listen for Live Identity Challenges, Policy, and Remote Engine Immobilization
   useEffect(() => {
     if (!driverProfile?.id) return;
     const unsub = onSnapshot(doc(db, 'drivers', driverProfile.id), (snap) => {
       if (snap.exists()) {
         const d = snap.data();
+        
+        // 1. Remote Immobilizer
+        setIsImmobilized(!!d.engineImmobilized);
+
+        // 2. Identity Challenge
         if (d.pendingVerification && d.pendingVerification.status === 'PENDING') {
           setIdentityPrompt(d.pendingVerification);
           setCountdown(d.pendingVerification.timeoutSeconds || 90);
@@ -140,6 +150,33 @@ export default function ActiveDutyScreen({ navigation }) {
     });
     return () => unsub();
   }, [driverProfile?.id]);
+
+  // Operational Geofence Perimeter Calculation (45 km radius from Central Hub)
+  const baseHubLat = 13.0827;
+  const baseHubLng = 80.2707;
+  const curLat = currentLocation?.latitude || baseHubLat;
+  const curLng = currentLocation?.longitude || baseHubLng;
+  const distFromHubKm = Math.round(
+    Math.sqrt(Math.pow((curLat - baseHubLat) * 111, 2) + Math.pow((curLng - baseHubLng) * 111, 2))
+  );
+  const isGeofenceWarning = distFromHubKm > 35 && distFromHubKm <= 45;
+  const isGeofenceBreach = distFromHubKm > 45;
+
+  // Auto-log Geofence Breach Incident to Firestore
+  useEffect(() => {
+    if (isGeofenceBreach && !geofenceBreachLogged && driverProfile?.id) {
+      setGeofenceBreachLogged(true);
+      addDoc(collection(db, 'securityAlerts'), {
+        type: 'GEOFENCE_EXIT_BREACH',
+        driverId: driverProfile.id,
+        bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+        severity: 'CRITICAL',
+        message: `Driver moved vehicle ${distFromHubKm} km outside authorized operations perimeter.`,
+        coordinates: { latitude: curLat, longitude: curLng },
+        timestamp: new Date().toISOString()
+      }).catch(console.warn);
+    }
+  }, [isGeofenceBreach, geofenceBreachLogged, driverProfile?.id, distFromHubKm, curLat, curLng]);
 
   // Countdown timer for identity challenge
   useEffect(() => {
@@ -276,6 +313,41 @@ export default function ActiveDutyScreen({ navigation }) {
       />
 
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Real-time Metropolitan Geofence Perimeter Alert Banner */}
+        {isGeofenceBreach ? (
+          <View style={{
+            backgroundColor: '#7F1D1D',
+            borderWidth: 2,
+            borderColor: '#EF4444',
+            borderRadius: 14,
+            padding: 14,
+            marginBottom: 16
+          }}>
+            <Text style={{ color: '#FEE2E2', fontWeight: '900', fontSize: 13, marginBottom: 4 }}>
+              🚨 GEOFENCE PERIMETER BREACH ({distFromHubKm} KM FROM HUB)
+            </Text>
+            <Text style={{ color: '#FECACA', fontSize: 12, lineHeight: 18 }}>
+              You have exited the 45 km authorized metropolitan zone. Shift violation recorded. Turn back toward Chennai immediately to avoid remote engine cut-off and police dispatch.
+            </Text>
+          </View>
+        ) : isGeofenceWarning ? (
+          <View style={{
+            backgroundColor: 'rgba(245, 158, 11, 0.15)',
+            borderWidth: 1,
+            borderColor: '#F59E0B',
+            borderRadius: 14,
+            padding: 12,
+            marginBottom: 16
+          }}>
+            <Text style={{ color: '#FCD34D', fontWeight: '800', fontSize: 12, marginBottom: 2 }}>
+              ⚠️ OPERATIONAL BOUNDARY WARNING ({distFromHubKm} KM FROM HUB)
+            </Text>
+            <Text style={{ color: '#FDE68A', fontSize: 11, lineHeight: 16 }}>
+              Approaching maximum 45 km operating limit. Do not exit city limits.
+            </Text>
+          </View>
+        ) : null}
+
         {/* Speedometer & Live Telemetry Gauge */}
         <View style={[styles.speedCard, isOverspeed && styles.speedCardAlert]}>
           <Text style={styles.speedLabel}>LIVE GPS SPEED (Raftar)</Text>
@@ -483,6 +555,72 @@ export default function ActiveDutyScreen({ navigation }) {
               />
             )}
           </View>
+        </View>
+      </Modal>
+
+      {/* Full-Screen Vehicle Immobilizer Lockdown Modal */}
+      <Modal visible={isImmobilized} transparent={false} animationType="fade">
+        <View style={{
+          flex: 1,
+          backgroundColor: '#0F172A',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24
+        }}>
+          <View style={{
+            width: 90,
+            height: 90,
+            borderRadius: 45,
+            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+            borderWidth: 2,
+            borderColor: '#EF4444',
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginBottom: 20
+          }}>
+            <Text style={{ fontSize: 44 }}>⚡</Text>
+          </View>
+
+          <Text style={{ color: '#EF4444', fontSize: 20, fontWeight: '900', textAlign: 'center', letterSpacing: 0.5 }}>
+            VEHICLE ENGINE IMMOBILIZED
+          </Text>
+          <Text style={{ color: '#FCD34D', fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 8 }}>
+            ரிமோட் இக்னிஷன் லாக் செய்யப்பட்டுள்ளது
+          </Text>
+
+          <View style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: 'rgba(239, 68, 68, 0.3)',
+            padding: 16,
+            marginVertical: 20,
+            width: '100%'
+          }}>
+            <Text style={{ color: '#F8FAFC', fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 10 }}>
+              இந்த பைக்கின் இன்ஜின் நிர்வாகத்தால் (MM Ride Operations) ரிமோட் மூலம் நிறுத்தப்பட்டுள்ளது.
+            </Text>
+            <Text style={{ color: '#94A3B8', fontSize: 12, lineHeight: 18, textAlign: 'center' }}>
+              Vehicle ignition has been remotely cut off. Real-time GPS coordinates are actively streaming to Central Operations. Park safely on the roadside and contact Operations immediately.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#10B981',
+              paddingVertical: 14,
+              paddingHorizontal: 24,
+              borderRadius: 12,
+              width: '100%',
+              alignItems: 'center',
+              marginBottom: 12
+            }}
+            onPress={() => Linking.openURL('tel:18004190123')}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 15 }}>
+              📞 Call Operations Control Room
+            </Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </View>
