@@ -82,6 +82,9 @@ export default function LiveMonitoring({ onSelectDriver }) {
       const isPhoneOffline = (Date.now() - lastUpdateMs) > (3 * 60 * 1000);
       return (d.isCurrentlyOnDuty || d.currentDutyId) && isPhoneOffline && (speed > 5);
     }
+    if (filterMode === 'GHOST_PHONE') {
+      return (d.isCurrentlyOnDuty || d.currentDutyId) && (d.bikeLocationDivergenceKm > 1 || (speed === 0 && d.assignedBikeMoving));
+    }
     return true; // 'ALL'
   });
 
@@ -240,6 +243,16 @@ export default function LiveMonitoring({ onSelectDriver }) {
         code: 'POSSIBLE_ACCIDENT_ABNORMAL_STOP',
         title: 'Possible Accident / Abnormal Stop ⚠️',
         detail: `Vehicle experienced sudden deceleration from ${initialSpd} km/h to 0 km/h and has remained stationary for ${stoppedMins} mins with phone unresponsive.`
+      };
+    }
+
+    // Problem 36: Ghost Phone Separation (Registered Phone left at room/depot while bike is moving)
+    if (driver.bikeLocationDivergenceKm > 1 || (isOnDuty && speed === 0 && driver.assignedBikeMoving)) {
+      return {
+        level: 'CRITICAL',
+        code: 'GHOST_PHONE_SEPARATION',
+        title: 'Ghost Phone Separation 📱🚨',
+        detail: `Registered company phone is stationary at room/depot, but vehicle is actively moving! Driver switched to unapproved personal device.`
       };
     }
 
@@ -493,6 +506,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
               title="Detect vehicles moving with driver phone offline / airplane mode (Tampering / Combination A)"
             >
               🚨 Phone Offline + Moving
+            </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'GHOST_PHONE' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: filterMode === 'GHOST_PHONE' ? '#FFF' : '#FCA5A5' }}
+              onClick={() => setFilterMode('GHOST_PHONE')}
+              title="Detect when registered company phone is left at room while bike is moving (Ghost Phone Separation)"
+            >
+              📱 Ghost Phone Alert
             </button>
           </div>
         </div>

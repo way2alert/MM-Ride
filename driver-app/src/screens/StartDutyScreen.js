@@ -13,6 +13,7 @@ import { useDriver } from '../context/DriverContext';
 import { requestStartDuty } from '../firebase/api';
 import { checkHubProximity } from '../utils/geofence';
 import { colors } from '../utils/colors';
+import * as Device from 'expo-device';
 import BigButton from '../components/BigButton';
 
 export default function StartDutyScreen({ navigation }) {
@@ -74,6 +75,16 @@ export default function StartDutyScreen({ navigation }) {
   };
 
   const handleStartDuty = async () => {
+    // Device Integrity Check (Problem 36: Unauthorized Phone / Switching Phones)
+    const currentDevId = Device.osBuildId || Device.modelName || 'device_android_dev';
+    if (driverProfile?.boundDeviceId && driverProfile.boundDeviceId !== currentDevId) {
+      Alert.alert(
+        'Unauthorized Device (Anadhikrit Phone)',
+        `This device is not registered for your MM Ride account.\n\nRegistered: [${driverProfile.boundDeviceId.slice(-8)}]\nCurrent: [${currentDevId.slice(-8)}]\n\nYou must use your registered company-assigned phone to prevent tracking evasion. Contact Depot Admin to re-bind.`
+      );
+      return;
+    }
+
     if (todayDutyMinutes >= maxDutyMinutes) {
       Alert.alert(
         'Daily Duty Limit Reached',
