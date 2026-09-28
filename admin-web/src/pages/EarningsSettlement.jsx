@@ -6,12 +6,17 @@ import {
   ExternalLink, 
   DollarSign, 
   AlertCircle, 
-  FileCheck2,
-  Lock,
-  Fuel,
-  Smartphone,
-  ShieldCheck,
-  Info
+  FileCheck2, 
+  Lock, 
+  Fuel, 
+  Smartphone, 
+  ShieldCheck, 
+  Info,
+  Image as ImageIcon,
+  MapPin,
+  AlertTriangle,
+  Check,
+  X
 } from 'lucide-react';
 import { collection, doc, setDoc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -24,11 +29,14 @@ export default function EarningsSettlement() {
   const [settlements, setSettlements] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [fuelExpenses, setFuelExpenses] = useState([]);
+  const [bikes, setBikes] = useState([]);
+  const [dutySessions, setDutySessions] = useState([]);
   const [activeTab, setActiveTab] = useState('settlements'); // settlements, submissions, fuel
 
   const [createModal, setCreateModal] = useState(false);
   const [payoutModal, setPayoutModal] = useState({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI' });
   const [adjModal, setAdjModal] = useState({ isOpen: false, settlement: null, amount: '', type: 'CREDIT', reason: '' });
+  const [viewingFuelProof, setViewingFuelProof] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const [newSettlement, setNewSettlement] = useState({
@@ -38,6 +46,7 @@ export default function EarningsSettlement() {
     platformCharges: '0',
     cashRidesCollected: '0',
     fuelExpenseAmount: '0',
+    personalKm: '0',
     fuelPaymentSource: 'OWNER_DIRECT',
     verificationMethod: 'PHYSICAL_PHONE_INSPECTION',
     submissionId: null,
@@ -49,15 +58,21 @@ export default function EarningsSettlement() {
     const unsubSettlements = subscribeToCollection('settlements', setSettlements);
     const unsubDrivers = subscribeToCollection('drivers', setDrivers);
     const unsubFuel = subscribeToCollection('fuelExpenses', setFuelExpenses);
+    const unsubBikes = subscribeToCollection('bikes', setBikes);
+    const unsubDuties = subscribeToCollection('dutySessions', setDutySessions);
     return () => {
       unsubSubmissions();
       unsubSettlements();
       unsubDrivers();
       unsubFuel();
+      unsubBikes();
+      unsubDuties();
     };
   }, []);
 
   const driversMap = Object.fromEntries(drivers.map(d => [d.id, d]));
+  const bikesMap = Object.fromEntries(bikes.map(b => [b.id, b]));
+  const dutySessionsMap = Object.fromEntries(dutySessions.map(ds => [ds.id, ds]));
 
   // Calculate live split preview
   const gross = Number(newSettlement.grossIncome) || 0;
@@ -66,7 +81,9 @@ export default function EarningsSettlement() {
   const worker50 = Math.round((net * 0.5) * 100) / 100;
   const owner50 = Math.round((net * 0.5) * 100) / 100;
   const reserve10 = Math.round((worker50 * 0.10) * 100) / 100;
-  const payableToday = Math.round((worker50 - reserve10) * 100) / 100;
+  const personalKm = Number(newSettlement.personalKm) || 0;
+  const personalFuelCharge = personalKm > 0 ? Math.round((personalKm / 55) * 102.5) : 0;
+  const payableToday = Math.max(0, Math.round((worker50 - reserve10 - personalFuelCharge) * 100) / 100);
   const fuelAmount = Number(newSettlement.fuelExpenseAmount) || 0;
 
   const handleCreateSettlement = async (e) => {
@@ -267,6 +284,94 @@ export default function EarningsSettlement() {
       alert(`Error applying adjustment: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 3-Way Fuel Mileage Analysis
+  const computeFuelMileage = (fuel) => {
+    const duty = fuel.dutyId ? dutySessionsMap[fuel.dutyId] : null;
+    const litres = Number(fuel.litres) || 0;
+    if (!litres || litres <= 0) return { mileage: null, status: 'UNKNOWN', distanceKm: null };
+
+    let distanceKm = null;
+    if (duty) {
+      if (duty.totalDistanceKm) {
+        distanceKm = Number(duty.totalDistanceKm);
+      } else if (duty.returnOdometer && duty.pickupOdometer) {
+        distanceKm = Number(duty.returnOdometer) - Number(duty.pickupOdometer);
+      } else if (fuel.odometerAtFill && duty.pickupOdometer) {
+        distanceKm = Number(fuel.odometerAtFill) - Number(duty.pickupOdometer);
+      }
+    }
+
+    if (distanceKm === null || distanceKm <= 0) {
+      return { mileage: null, status: 'NO_SHIFT_DATA', distanceKm: null };
+    }
+
+    const mileage = Math.round((distanceKm / litres) * 10) / 10;
+    let status = 'OPTIMAL';
+    let note = 'Normal Splendor mileage (45-65 km/L)';
+
+    if (mileage < 38) {
+      status = 'HIGH_CONSUMPTION';
+      note = '🚨 Abnormal high consumption! Fuel siphoning or false litres claim suspected';
+    } else if (mileage > 75) {
+      status = 'ODOMETER_ANOMALY';
+      note = '⚠️ Unusually high mileage. Check odometer cable or incorrect reading';
+    }
+
+    return { mileage, status, note, distanceKm };
+  };
+
+  const handleApproveFuel = async (fuel) => {
+    const driverName = driversMap[fuel.driverId]?.fullName || 'driver';
+    if (!window.confirm(`Approve fuel reimbursement of ₹${fuel.amount} (${fuel.litres || '—'}L) for ${driverName}?`)) return;
+    try {
+      await updateDoc(doc(db, 'fuelExpenses', fuel.id), {
+        status: 'APPROVED',
+        approvedAt: new Date().toISOString(),
+        approvedBy: 'ADMIN'
+      });
+      await logAdminAudit({
+        driverId: fuel.driverId,
+        action: 'FUEL_CLAIM_APPROVED',
+        relevantRecordId: fuel.id,
+        notes: `Approved petrol claim ₹${fuel.amount} (${fuel.litres || '—'}L). Reconciled with shift mileage.`
+      });
+    } catch (e) {
+      alert('Error approving fuel claim: ' + e.message);
+    }
+  };
+
+  const handleRejectFuel = async (fuel) => {
+    const reason = window.prompt(
+      'Enter reason for rejecting fuel claim (e.g. Siphoning suspected, duplicate bill, meter mismatch):',
+      'Mileage anomaly / Suspicious fuel consumption'
+    );
+    if (!reason) return;
+    try {
+      await updateDoc(doc(db, 'fuelExpenses', fuel.id), {
+        status: 'REJECTED',
+        rejectionReason: reason,
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: 'ADMIN'
+      });
+      await addDoc(collection(db, 'securityAlerts'), {
+        type: 'FUEL_CLAIM_REJECTED',
+        driverId: fuel.driverId,
+        bikeId: fuel.bikeId || null,
+        severity: 'HIGH',
+        message: `Fuel claim ₹${fuel.amount} (${fuel.litres || '—'}L) rejected. Reason: ${reason}`,
+        timestamp: new Date().toISOString()
+      });
+      await logAdminAudit({
+        driverId: fuel.driverId,
+        action: 'FUEL_CLAIM_REJECTED',
+        relevantRecordId: fuel.id,
+        notes: `Rejected fuel claim ₹${fuel.amount}. Reason: ${reason}`
+      });
+    } catch (e) {
+      alert('Error rejecting fuel claim: ' + e.message);
     }
   };
 
@@ -499,69 +604,256 @@ export default function EarningsSettlement() {
           </div>
         )}
 
-        {/* TAB 3: SEPARATE OWNER FUEL EXPENSE LEDGER */}
+        {/* TAB 3: THREE-WAY FUEL AUDIT & ANTI-FRAUD RECONCILIATION CONSOLE */}
         {activeTab === 'fuel' && (
-          <div className="table-responsive">
-            <div style={{ padding: '0.75rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 8, marginBottom: '1rem', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F59E0B', fontSize: '0.85rem', fontWeight: 600 }}>
-                <Fuel size={16} /> OWNER PETROL & FUEL EXPENSE LEDGER
+          <div>
+            {/* Top KPI Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div className="card" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Total Fuel Claimed
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FFF', marginTop: 4 }}>
+                  ₹{fuelExpenses.reduce((sum, f) => sum + (Number(f.amount) || 0), 0).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  {fuelExpenses.reduce((sum, f) => sum + (Number(f.litres) || 0), 0).toFixed(1)} Litres Recorded
+                </div>
               </div>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94A3B8' }}>
-                Per MM Ride policy, petrol is an <b>Owner Expense</b>. Fuel costs are recorded here in the company operational ledger and are <u>never</u> deducted from the driver's 50% ride income share.
+
+              <div className="card" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#10B981', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Approved Owner Expense
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10B981', marginTop: 4 }}>
+                  ₹{fuelExpenses.filter(f => f.status === 'APPROVED' || !f.status).reduce((sum, f) => sum + (Number(f.amount) || 0), 0).toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Direct Depot & Verified Claims
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#60A5FA', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Pending Driver Claims
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#60A5FA', marginTop: 4 }}>
+                  {fuelExpenses.filter(f => f.status === 'PENDING_APPROVAL').length} Claims
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  ₹{fuelExpenses.filter(f => f.status === 'PENDING_APPROVAL').reduce((sum, f) => sum + (Number(f.amount) || 0), 0).toLocaleString()} Awaiting Audit
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#EF4444', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Flagged Mileage Anomalies
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#EF4444', marginTop: 4 }}>
+                  {fuelExpenses.filter(f => {
+                    const a = computeFuelMileage(f);
+                    return a.status === 'HIGH_CONSUMPTION' || a.status === 'ODOMETER_ANOMALY';
+                  }).length} Flags
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Siphoning or Cable Disconnect
+                </div>
+              </div>
+            </div>
+
+            {/* Three-Way Audit Protocol Explanation */}
+            <div style={{ padding: '0.85rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 10, marginBottom: '1.25rem', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F59E0B', fontSize: '0.88rem', fontWeight: 700 }}>
+                <Fuel size={17} /> THREE-WAY FUEL RECONCILIATION FORMULA (Anti-Petrol Cheating System)
+              </div>
+              <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: '#CBD5E1', lineHeight: 1.5 }}>
+                <b>Litres Claimed ÷ (Shift Odometer Delta & GPS Actual KM) = Real-World Mileage (km/L).</b> Normal Hero Splendor operates at <b>45–65 km/L</b>. Mileage below <b>38 km/L</b> flags automated siphoning risk. Driver cannot claim manual amount without pump dispenser camera proof and matching pump odometer.
               </p>
             </div>
 
-            <table className="custom-table">
-              <thead>
-                <tr>
-                  <th>Expense ID / Date</th>
-                  <th>Driver</th>
-                  <th>Amount (₹)</th>
-                  <th>Payment Source</th>
-                  <th>Settlement Link</th>
-                  <th>Notes</th>
-                  <th>Logged At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fuelExpenses.map(f => {
-                  const driver = driversMap[f.driverId];
-                  return (
-                    <tr key={f.id}>
-                      <td>
-                        <code>{f.id}</code>
-                        <div style={{ fontSize: '0.75rem', color: '#94A3B8' }}>{f.date}</div>
-                      </td>
-                      <td>
-                        <b>{driver?.fullName || 'Driver'}</b>
-                        <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{f.driverId}</div>
-                      </td>
-                      <td>
-                        <b style={{ color: '#F59E0B', fontSize: '0.95rem' }}>₹{f.amount}</b>
-                      </td>
-                      <td>
-                        <span className="badge badge-neutral">
-                          {f.paymentSource === 'REIMBURSED_TO_DRIVER' ? 'Reimbursed to Driver' : 'Owner Direct'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: '0.8rem', color: '#60A5FA' }}>{f.settlementId || 'Direct Fuel'}</span>
-                      </td>
-                      <td>{f.notes || '—'}</td>
-                      <td>{formatDateTime(f.createdAt || f.recordedAt)}</td>
-                    </tr>
-                  );
-                })}
-
-                {fuelExpenses.length === 0 && (
+            <div className="table-responsive">
+              <table className="custom-table">
+                <thead>
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: '#64748B' }}>
-                      No fuel expenses logged yet.
-                    </td>
+                    <th>Date / Claim ID</th>
+                    <th>Driver & Bike</th>
+                    <th>Amount & Litres</th>
+                    <th>Pump Odometer & GPS</th>
+                    <th>Camera Proofs</th>
+                    <th>3-Way Mileage Audit</th>
+                    <th>Status</th>
+                    <th>Action</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {fuelExpenses.map(f => {
+                    const driver = driversMap[f.driverId];
+                    const bike = bikesMap[f.bikeId];
+                    const analysis = computeFuelMileage(f);
+                    const unitRate = f.amount && f.litres ? Math.round((Number(f.amount) / Number(f.litres)) * 10) / 10 : null;
+
+                    return (
+                      <tr key={f.id}>
+                        <td>
+                          <div style={{ fontWeight: 600, color: '#FFF' }}>{f.date}</div>
+                          <code style={{ fontSize: '0.72rem', color: '#94A3B8' }}>{f.id.substring(0, 10)}...</code>
+                        </td>
+                        <td>
+                          <b>{driver?.fullName || 'Driver'}</b>
+                          <div style={{ fontSize: '0.75rem', color: '#60A5FA' }}>
+                            {bike?.registrationNumber || driver?.assignedBikeRegistration || 'Assigned Bike'}
+                          </div>
+                        </td>
+                        <td>
+                          <b style={{ color: '#F59E0B', fontSize: '1rem' }}>₹{f.amount}</b>
+                          {f.litres && (
+                            <div style={{ fontSize: '0.75rem', color: '#CBD5E1' }}>
+                              {f.litres} L {unitRate ? `(@ ₹${unitRate}/L)` : ''}
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: '#E2E8F0', fontSize: '0.85rem' }}>
+                            {f.odometerAtFill ? `${f.odometerAtFill} km` : '—'}
+                          </div>
+                          {f.pumpGps ? (
+                            <a 
+                              href={`https://www.google.com/maps?q=${f.pumpGps.latitude},${f.pumpGps.longitude}`}
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: '0.72rem', color: '#60A5FA', textDecoration: 'none', marginTop: 2 }}
+                            >
+                              <MapPin size={11} /> Pump GPS ↗
+                            </a>
+                          ) : (
+                            <span style={{ fontSize: '0.72rem', color: '#64748B' }}>Depot record</span>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {f.dispenserPhotoUrl && (
+                              <img 
+                                src={f.dispenserPhotoUrl} 
+                                alt="Dispenser" 
+                                onClick={() => setViewingFuelProof(f)}
+                                style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '1.5px solid #F59E0B' }} 
+                                title="Dispenser Machine Screen (Click to inspect)"
+                              />
+                            )}
+                            {f.meterPhotoUrl && (
+                              <img 
+                                src={f.meterPhotoUrl} 
+                                alt="Meter" 
+                                onClick={() => setViewingFuelProof(f)}
+                                style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '1.5px solid #60A5FA' }} 
+                                title="Bike Odometer (Click to inspect)"
+                              />
+                            )}
+                            {f.receiptPhotoUrl && (
+                              <img 
+                                src={f.receiptPhotoUrl} 
+                                alt="Receipt" 
+                                onClick={() => setViewingFuelProof(f)}
+                                style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', border: '1.5px solid #10B981' }} 
+                                title="Pump Receipt Bill (Click to inspect)"
+                              />
+                            )}
+                            {(!f.dispenserPhotoUrl && !f.meterPhotoUrl && !f.receiptPhotoUrl) ? (
+                              <span style={{ fontSize: '0.75rem', color: '#64748B' }}>Direct Ledger</span>
+                            ) : (
+                              <button 
+                                onClick={() => setViewingFuelProof(f)}
+                                style={{ background: 'none', border: 'none', color: '#60A5FA', fontSize: '0.72rem', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                              >
+                                View 🔍
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          {analysis.mileage !== null ? (
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{
+                                  fontSize: '0.85rem',
+                                  fontWeight: 800,
+                                  color: analysis.status === 'HIGH_CONSUMPTION' ? '#EF4444' : analysis.status === 'ODOMETER_ANOMALY' ? '#F59E0B' : '#10B981'
+                                }}>
+                                  {analysis.mileage} km/L
+                                </span>
+                                {analysis.status === 'HIGH_CONSUMPTION' && (
+                                  <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>🚨 Siphoning?</span>
+                                )}
+                                {analysis.status === 'ODOMETER_ANOMALY' && (
+                                  <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>⚠️ Tampering?</span>
+                                )}
+                                {analysis.status === 'OPTIMAL' && (
+                                  <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>🟢 Normal</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                                Shift: {analysis.distanceKm} km ÷ {f.litres} L
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                              {f.odometerAtFill ? `Odo: ${f.odometerAtFill} km` : 'No Shift Cross-check'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {f.status === 'PENDING_APPROVAL' ? (
+                            <span className="badge badge-warning">Pending Approval</span>
+                          ) : f.status === 'APPROVED' ? (
+                            <span className="badge badge-success">Approved ✅</span>
+                          ) : f.status === 'REJECTED' ? (
+                            <span className="badge badge-danger" title={f.rejectionReason}>Rejected ❌</span>
+                          ) : (
+                            <span className="badge badge-neutral">Settled</span>
+                          )}
+                        </td>
+                        <td>
+                          {f.status === 'PENDING_APPROVAL' ? (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                className="btn-success"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={() => handleApproveFuel(f)}
+                                title="Approve fuel claim"
+                              >
+                                <Check size={14} /> Approve
+                              </button>
+                              <button
+                                className="btn-danger"
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={() => handleRejectFuel(f)}
+                                title="Reject fuel claim"
+                              >
+                                <X size={14} /> Reject
+                              </button>
+                            </div>
+                          ) : f.status === 'REJECTED' ? (
+                            <div style={{ fontSize: '0.7rem', color: '#F87171', maxWidth: 120 }}>
+                              {f.rejectionReason || 'Rejected'}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748B' }}>Reconciled</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {fuelExpenses.length === 0 && (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: '#64748B' }}>
+                        No fuel expenses logged yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -676,6 +968,21 @@ export default function EarningsSettlement() {
               />
               <span style={{ fontSize: '0.72rem', color: '#F59E0B' }}>Owner expense ledger — ZERO deduction on worker share</span>
             </div>
+
+            <div className="form-group">
+              <label className="form-label">Unauthorized Personal Use (Joyriding) KM</label>
+              <input
+                type="number"
+                step="1"
+                className="form-input"
+                placeholder="0"
+                value={newSettlement.personalKm}
+                onChange={(e) => setNewSettlement({ ...newSettlement, personalKm: e.target.value })}
+              />
+              <span style={{ fontSize: '0.72rem', color: '#F87171' }}>
+                {personalFuelCharge > 0 ? `Deducting ${formatCurrency(personalFuelCharge)} personal fuel from worker share` : 'Off-duty km fuel is deducted from worker'}
+              </span>
+            </div>
           </div>
 
           {fuelAmount > 0 && (
@@ -719,8 +1026,14 @@ export default function EarningsSettlement() {
               <span style={{ color: '#94A3B8' }}>10% Temporary Reserve Hold from Worker Share:</span>
               <b style={{ color: '#FCD34D' }}>{formatCurrency(reserve10)}</b>
             </div>
+            {personalFuelCharge > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: '0.85rem' }}>
+                <span style={{ color: '#F87171' }}>Personal Joyriding Fuel Deduction ({personalKm} km):</span>
+                <b style={{ color: '#F87171' }}>-{formatCurrency(personalFuelCharge)}</b>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: '0.95rem' }}>
-              <span style={{ color: '#FFF', fontWeight: 600 }}>Payable to Driver Today (90% of Worker Share):</span>
+              <span style={{ color: '#FFF', fontWeight: 600 }}>Payable to Driver Today (After Deductions):</span>
               <b style={{ color: '#10B981' }}>{formatCurrency(payableToday)}</b>
             </div>
 
@@ -868,6 +1181,116 @@ export default function EarningsSettlement() {
             required
           />
         </div>
+      </Modal>
+
+      {/* Three-Way Fuel Proof Inspection Lightbox Modal */}
+      <Modal
+        isOpen={!!viewingFuelProof}
+        onClose={() => setViewingFuelProof(null)}
+        title="Three-Way Fuel Proof Inspection (நேரடி சான்றுகள்)"
+      >
+        {viewingFuelProof && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              {/* Proof 1: Dispenser Screen */}
+              <div style={{ background: '#1E293B', padding: '0.75rem', borderRadius: 8, textAlign: 'center', border: '1px solid #F59E0B' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#FCD34D', marginBottom: 6 }}>
+                  1. Dispenser Screen (Litres & ₹)
+                </div>
+                {viewingFuelProof.dispenserPhotoUrl ? (
+                  <a href={viewingFuelProof.dispenserPhotoUrl} target="_blank" rel="noopener noreferrer">
+                    <img 
+                      src={viewingFuelProof.dispenserPhotoUrl} 
+                      alt="Dispenser" 
+                      style={{ width: '100%', height: 180, objectFit: 'contain', borderRadius: 6, background: '#0F172A' }} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#60A5FA', marginTop: 4 }}>Click for full resolution ↗</div>
+                  </a>
+                ) : (
+                  <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '0.8rem' }}>
+                    No Dispenser Photo
+                  </div>
+                )}
+              </div>
+
+              {/* Proof 2: Bike Odometer */}
+              <div style={{ background: '#1E293B', padding: '0.75rem', borderRadius: 8, textAlign: 'center', border: '1px solid #60A5FA' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#60A5FA', marginBottom: 6 }}>
+                  2. Bike Odometer & Fuel Gauge
+                </div>
+                {viewingFuelProof.meterPhotoUrl ? (
+                  <a href={viewingFuelProof.meterPhotoUrl} target="_blank" rel="noopener noreferrer">
+                    <img 
+                      src={viewingFuelProof.meterPhotoUrl} 
+                      alt="Odometer" 
+                      style={{ width: '100%', height: 180, objectFit: 'contain', borderRadius: 6, background: '#0F172A' }} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#60A5FA', marginTop: 4 }}>Click for full resolution ↗</div>
+                  </a>
+                ) : (
+                  <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '0.8rem' }}>
+                    No Meter Photo
+                  </div>
+                )}
+              </div>
+
+              {/* Proof 3: Receipt Bill */}
+              <div style={{ background: '#1E293B', padding: '0.75rem', borderRadius: 8, textAlign: 'center', border: '1px solid #10B981' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#34D399', marginBottom: 6 }}>
+                  3. Cash Receipt / Bill
+                </div>
+                {viewingFuelProof.receiptPhotoUrl ? (
+                  <a href={viewingFuelProof.receiptPhotoUrl} target="_blank" rel="noopener noreferrer">
+                    <img 
+                      src={viewingFuelProof.receiptPhotoUrl} 
+                      alt="Receipt" 
+                      style={{ width: '100%', height: 180, objectFit: 'contain', borderRadius: 6, background: '#0F172A' }} 
+                    />
+                    <div style={{ fontSize: '0.72rem', color: '#60A5FA', marginTop: 4 }}>Click for full resolution ↗</div>
+                  </a>
+                ) : (
+                  <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '0.8rem' }}>
+                    No Receipt Bill (Optional)
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Audit Summary Card in Modal */}
+            <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '1rem', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', fontSize: '0.85rem' }}>
+                <div>
+                  <span style={{ color: '#94A3B8' }}>Claim Amount:</span>
+                  <div style={{ fontWeight: 800, color: '#F59E0B', fontSize: '1.1rem' }}>₹{viewingFuelProof.amount}</div>
+                </div>
+                <div>
+                  <span style={{ color: '#94A3B8' }}>Litres Filled:</span>
+                  <div style={{ fontWeight: 700, color: '#FFF' }}>{viewingFuelProof.litres || '—'} Litres</div>
+                </div>
+                <div>
+                  <span style={{ color: '#94A3B8' }}>Pump Odometer:</span>
+                  <div style={{ fontWeight: 700, color: '#FFF' }}>{viewingFuelProof.odometerAtFill ? `${viewingFuelProof.odometerAtFill} km` : '—'}</div>
+                </div>
+              </div>
+
+              {viewingFuelProof.pumpGps && (
+                <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                    Geotagged Pump Location: {viewingFuelProof.pumpGps.latitude?.toFixed(4)}, {viewingFuelProof.pumpGps.longitude?.toFixed(4)}
+                  </span>
+                  <a 
+                    href={`https://www.google.com/maps?q=${viewingFuelProof.pumpGps.latitude},${viewingFuelProof.pumpGps.longitude}`}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ fontSize: '0.8rem', color: '#60A5FA', fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    Open in Google Maps ↗
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

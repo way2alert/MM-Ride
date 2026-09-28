@@ -738,3 +738,75 @@ export async function getHubDetails(hubId) {
     radiusMeters: 400
   };
 }
+
+/**
+ * Submit Tamper-Proof Fuel Fill Entry with live dispenser & odometer photos
+ */
+export async function submitFuelFillEntry({
+  driverId,
+  bikeId,
+  dutyId,
+  amount,
+  litres,
+  odometer,
+  dispenserPhotoUri,
+  meterPhotoUri,
+  receiptPhotoUri,
+  gps
+}) {
+  let dispenserPhotoUrl = null;
+  let meterPhotoUrl = null;
+  let receiptPhotoUrl = null;
+
+  if (dispenserPhotoUri) {
+    try {
+      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_dispenser.jpg`);
+      const blob = await uriToNativeBlob(dispenserPhotoUri);
+      await uploadBytes(fileRef, blob);
+      dispenserPhotoUrl = await getDownloadURL(fileRef);
+    } catch (e) {
+      console.warn('Dispenser upload error:', e);
+    }
+  }
+
+  if (meterPhotoUri) {
+    try {
+      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_meter.jpg`);
+      const blob = await uriToNativeBlob(meterPhotoUri);
+      await uploadBytes(fileRef, blob);
+      meterPhotoUrl = await getDownloadURL(fileRef);
+    } catch (e) {
+      console.warn('Meter upload error:', e);
+    }
+  }
+
+  if (receiptPhotoUri) {
+    try {
+      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_receipt.jpg`);
+      const blob = await uriToNativeBlob(receiptPhotoUri);
+      await uploadBytes(fileRef, blob);
+      receiptPhotoUrl = await getDownloadURL(fileRef);
+    } catch (e) {
+      console.warn('Receipt upload error:', e);
+    }
+  }
+
+  const fuelDoc = await addDoc(collection(db, 'fuelExpenses'), {
+    driverId,
+    bikeId: bikeId || null,
+    dutyId: dutyId || null,
+    amount: Number(amount),
+    litres: Number(litres),
+    odometerAtFill: Number(odometer),
+    dispenserPhotoUrl,
+    meterPhotoUrl,
+    receiptPhotoUrl,
+    pumpGps: gps || null,
+    paymentSource: 'REIMBURSED_TO_DRIVER',
+    status: 'PENDING_APPROVAL',
+    date: new Date().toISOString().split('T')[0],
+    createdAt: serverTimestamp()
+  });
+
+  return fuelDoc.id;
+}

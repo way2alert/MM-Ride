@@ -17,7 +17,7 @@ import { collection, query, where, getDocs, updateDoc, doc, onSnapshot, addDoc }
 import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
 import { colors } from '../utils/colors';
-import { logGpsBreadcrumb, uploadVerificationSelfie, confirmIdentityChallenge } from '../firebase/api';
+import { logGpsBreadcrumb, uploadVerificationSelfie, confirmIdentityChallenge, submitFuelFillEntry } from '../firebase/api';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
 
@@ -42,6 +42,16 @@ export default function ActiveDutyScreen({ navigation }) {
   // Anti-Theft & Remote Immobilizer State
   const [isImmobilized, setIsImmobilized] = useState(false);
   const [geofenceBreachLogged, setGeofenceBreachLogged] = useState(false);
+
+  // Petrol Fill Entry State (Anti-Petrol Fraud)
+  const [showFuelModal, setShowFuelModal] = useState(false);
+  const [fuelAmount, setFuelAmount] = useState('');
+  const [fuelLitres, setFuelLitres] = useState('');
+  const [fuelOdometer, setFuelOdometer] = useState(activeDutySession?.pickupOdometer ? String(activeDutySession.pickupOdometer) : '');
+  const [dispenserPhoto, setDispenserPhoto] = useState(null);
+  const [meterPhoto, setMeterPhoto] = useState(null);
+  const [receiptPhoto, setReceiptPhoto] = useState(null);
+  const [submittingFuel, setSubmittingFuel] = useState(false);
 
   // In-Shift Live Face / Selfie Verification State
   const [identityPrompt, setIdentityPrompt] = useState(null);
@@ -292,6 +302,86 @@ export default function ActiveDutyScreen({ navigation }) {
     }
   };
 
+  const handleCaptureFuelPhoto = async (type) => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Camera Permission Required', 'Camera access is required to photograph fuel dispenser and odometer.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.6
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const uri = res.assets[0].uri;
+        if (type === 'dispenser') setDispenserPhoto(uri);
+        else if (type === 'meter') setMeterPhoto(uri);
+        else if (type === 'receipt') setReceiptPhoto(uri);
+      }
+    } catch (e) {
+      Alert.alert('Camera Error', e.message);
+    }
+  };
+
+  const handleSubmitFuelFill = async () => {
+    const amt = parseFloat(fuelAmount);
+    const ltr = parseFloat(fuelLitres);
+    const odo = parseInt(fuelOdometer, 10);
+
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid fuel amount in ₹.');
+      return;
+    }
+    if (isNaN(ltr) || ltr <= 0) {
+      Alert.alert('Invalid Litres', 'Please enter valid litres of petrol filled.');
+      return;
+    }
+    if (isNaN(odo) || odo <= 0) {
+      Alert.alert('Invalid Odometer', 'Please enter the current odometer reading at the petrol pump.');
+      return;
+    }
+    if (!dispenserPhoto) {
+      Alert.alert('Dispenser Photo Required', 'You must photograph the petrol pump dispenser screen showing Litres and Amount.');
+      return;
+    }
+    if (!meterPhoto) {
+      Alert.alert('Odometer Photo Required', 'You must photograph the bike speedometer / fuel meter at the pump.');
+      return;
+    }
+
+    setSubmittingFuel(true);
+    try {
+      await submitFuelFillEntry({
+        driverId: driverProfile?.id,
+        bikeId: driverProfile?.assignedBikeId || assignedBike?.id,
+        dutyId: activeDutySession?.id,
+        amount: amt,
+        litres: ltr,
+        odometer: odo,
+        dispenserPhotoUri: dispenserPhoto,
+        meterPhotoUri: meterPhoto,
+        receiptPhotoUri: receiptPhoto,
+        gps: currentLocation
+      });
+
+      setShowFuelModal(false);
+      setFuelAmount('');
+      setFuelLitres('');
+      setDispenserPhoto(null);
+      setMeterPhoto(null);
+      setReceiptPhoto(null);
+      Alert.alert(
+        'Fuel Fill Logged ✅',
+        'Your petrol fill has been recorded. It will be 3-way verified against GPS km and approved in your shift settlement.'
+      );
+    } catch (err) {
+      Alert.alert('Submission Error', err.message);
+    } finally {
+      setSubmittingFuel(false);
+    }
+  };
+
   const speedLimit = Number(systemSettings?.speedAlertThresholdKmh) || 60;
   const maxDutyHours = Number(systemSettings?.maxDutyHoursPerDay) || 12;
   const maxDutyMinutes = maxDutyHours * 60;
@@ -428,6 +518,19 @@ export default function ActiveDutyScreen({ navigation }) {
 
         {/* Primary Controls */}
         <View style={styles.controlsSection}>
+          <BigButton
+            title="Log Petrol Fill ⛽ (Fuel Claim)"
+            onPress={() => {
+              if (!fuelOdometer && activeDutySession?.pickupOdometer) {
+                setFuelOdometer(String(activeDutySession.pickupOdometer));
+              }
+              setShowFuelModal(true);
+            }}
+            variant="secondary"
+            style={{ marginBottom: 12, backgroundColor: '#1E293B', borderColor: '#F59E0B', borderWidth: 1.5 }}
+            textStyle={{ color: '#FCD34D' }}
+          />
+
           <BigButton
             title="Take a Break (Break Lein) ⏸️"
             onPress={() => navigation?.navigate && navigation.navigate('Break')}
@@ -621,6 +724,196 @@ export default function ActiveDutyScreen({ navigation }) {
               📞 Call Operations Control Room
             </Text>
           </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Three-Way Verified Fuel Fill Modal */}
+      <Modal
+        visible={showFuelModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => !submittingFuel && setShowFuelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '90%', padding: 18, borderColor: '#F59E0B' }]}>
+            <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false}>
+              <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 36, marginBottom: 4 }}>⛽</Text>
+                <Text style={[styles.idleTitle, { color: '#FCD34D', textAlign: 'center' }]}>
+                  Log Petrol Fill (Fuel Claim)
+                </Text>
+                <Text style={[styles.idleTitleHindi, { color: '#94A3B8' }]}>
+                  பெட்ரோல் போட்ட பதிவு & நேரடி சான்று
+                </Text>
+              </View>
+
+              {/* Anti-Fraud Three-Way Verification Notice */}
+              <View style={{
+                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                borderWidth: 1,
+                borderColor: '#F59E0B',
+                borderRadius: 10,
+                padding: 10,
+                marginBottom: 16
+              }}>
+                <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '800', marginBottom: 2 }}>
+                  🔒 THREE-WAY AUDIT ACTIVE
+                </Text>
+                <Text style={{ color: '#E2E8F0', fontSize: 11, lineHeight: 16 }}>
+                  Litres filled are automatically reconciled with shift GPS distance and Odometer delta. Bills without pump screen photos or duplicate claims will be rejected automatically.
+                </Text>
+              </View>
+
+              <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                PETROL AMOUNT (₹) *
+              </Text>
+              <TextInput
+                style={[styles.idleInput, { minHeight: 44, marginBottom: 12 }]}
+                placeholder="e.g. 500"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={fuelAmount}
+                onChangeText={setFuelAmount}
+              />
+
+              <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                LITRES FILLED (L) *
+              </Text>
+              <TextInput
+                style={[styles.idleInput, { minHeight: 44, marginBottom: 12 }]}
+                placeholder="e.g. 4.85"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={fuelLitres}
+                onChangeText={setFuelLitres}
+              />
+
+              <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                BIKE ODOMETER AT PUMP (KM) *
+              </Text>
+              <TextInput
+                style={[styles.idleInput, { minHeight: 44, marginBottom: 16 }]}
+                placeholder="e.g. 42350"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                value={fuelOdometer}
+                onChangeText={setFuelOdometer}
+              />
+
+              {/* Photo Proof 1: Dispenser Machine */}
+              <View style={{ marginBottom: 14 }}>
+                <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+                  1. Dispenser Machine Screen Photo * (Litres & ₹)
+                </Text>
+                {dispenserPhoto ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Image source={{ uri: dispenserPhoto }} style={{ width: 70, height: 70, borderRadius: 8 }} />
+                    <TouchableOpacity onPress={() => handleCaptureFuelPhoto('dispenser')}>
+                      <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '700' }}>🔄 Retake Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#334155',
+                      padding: 12,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      borderWidth: 1,
+                      borderColor: '#475569',
+                      borderStyle: 'dashed'
+                    }}
+                    onPress={() => handleCaptureFuelPhoto('dispenser')}
+                  >
+                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>
+                      📸 Capture Dispenser Screen (Machine)
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Photo Proof 2: Bike Odometer & Fuel Meter */}
+              <View style={{ marginBottom: 14 }}>
+                <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+                  2. Bike Odometer & Fuel Gauge Console *
+                </Text>
+                {meterPhoto ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Image source={{ uri: meterPhoto }} style={{ width: 70, height: 70, borderRadius: 8 }} />
+                    <TouchableOpacity onPress={() => handleCaptureFuelPhoto('meter')}>
+                      <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '700' }}>🔄 Retake Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#334155',
+                      padding: 12,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      borderWidth: 1,
+                      borderColor: '#475569',
+                      borderStyle: 'dashed'
+                    }}
+                    onPress={() => handleCaptureFuelPhoto('meter')}
+                  >
+                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>
+                      📸 Capture Bike Speedometer / Fuel Meter
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Photo Proof 3: Receipt Bill (Optional but Recommended) */}
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
+                  3. Pump Cash Bill / Printed Receipt (Optional)
+                </Text>
+                {receiptPhoto ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Image source={{ uri: receiptPhoto }} style={{ width: 70, height: 70, borderRadius: 8 }} />
+                    <TouchableOpacity onPress={() => handleCaptureFuelPhoto('receipt')}>
+                      <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '700' }}>🔄 Retake Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#334155',
+                      padding: 12,
+                      borderRadius: 8,
+                      alignItems: 'center',
+                      borderWidth: 1,
+                      borderColor: '#475569',
+                      borderStyle: 'dashed'
+                    }}
+                    onPress={() => handleCaptureFuelPhoto('receipt')}
+                  >
+                    <Text style={{ color: '#94A3B8', fontSize: 12 }}>
+                      🧾 Capture Printed Pump Receipt (Optional)
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Action Buttons */}
+              <BigButton
+                title="Submit Fuel Claim for Verification ✅"
+                onPress={handleSubmitFuelFill}
+                loading={submittingFuel}
+                variant="primary"
+                style={{ width: '100%', marginBottom: 10 }}
+              />
+
+              <TouchableOpacity
+                onPress={() => setShowFuelModal(false)}
+                disabled={submittingFuel}
+                style={{ padding: 10, alignItems: 'center', width: '100%' }}
+              >
+                <Text style={{ color: '#94A3B8', fontSize: 13, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </View>
