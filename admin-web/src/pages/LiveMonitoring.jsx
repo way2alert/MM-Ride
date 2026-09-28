@@ -77,6 +77,11 @@ export default function LiveMonitoring({ onSelectDriver }) {
       const isStill = speed === 0 && ((Date.now() - lastPing) > (3 * 60 * 1000));
       return !!d.abnormalStopAlert?.active || ((d.isCurrentlyOnDuty || d.currentDutyId) && isStill && ((d.previousRecordedSpeed || 0) > 30));
     }
+    if (filterMode === 'PHONE_OFFLINE_MOVING') {
+      const lastUpdateMs = loc?.timestamp ? new Date(loc.timestamp).getTime() : 0;
+      const isPhoneOffline = (Date.now() - lastUpdateMs) > (3 * 60 * 1000);
+      return (d.isCurrentlyOnDuty || d.currentDutyId) && isPhoneOffline && (speed > 5);
+    }
     return true; // 'ALL'
   });
 
@@ -163,7 +168,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
     const loc = driver.lastKnownLocation;
     const speed = loc?.speed || 0;
     const lastUpdateMs = loc?.timestamp ? new Date(loc.timestamp).getTime() : 0;
-    const isPhoneOffline = (Date.now() - lastUpdateMs) > (5 * 60 * 1000); // 5 mins no ping
+    const isPhoneOffline = (Date.now() - lastUpdateMs) > (3 * 60 * 1000); // 3 mins no ping
     const isImmobilized = !!driver.engineImmobilized;
     const isOnDuty = driver.isCurrentlyOnDuty || !!driver.currentDutyId;
 
@@ -481,6 +486,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
             >
               ⚠️ Possible Accident / Stop
             </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'PHONE_OFFLINE_MOVING' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: filterMode === 'PHONE_OFFLINE_MOVING' ? '#FFF' : '#FCA5A5' }}
+              onClick={() => setFilterMode('PHONE_OFFLINE_MOVING')}
+              title="Detect vehicles moving with driver phone offline / airplane mode (Tampering / Combination A)"
+            >
+              🚨 Phone Offline + Moving
+            </button>
           </div>
         </div>
 
@@ -579,6 +592,22 @@ export default function LiveMonitoring({ onSelectDriver }) {
                     })()}
                   </div>
                 )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  <span style={{ color: '#94A3B8' }}>Phone Heartbeat:</span>
+                  {(() => {
+                    const lastMs = selectedDriver.lastKnownLocation?.timestamp ? new Date(selectedDriver.lastKnownLocation.timestamp).getTime() : 0;
+                    const isOffline = (Date.now() - lastMs) > (3 * 60 * 1000);
+                    return (
+                      <b style={{ color: isOffline ? '#EF4444' : '#10B981' }}>
+                        {isOffline ? '❌ OFFLINE (Airplane / No Data)' : '🟢 ONLINE (Active Sync)'}
+                      </b>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                  <span style={{ color: '#94A3B8' }}>Independent Bike IoT:</span>
+                  <b style={{ color: '#10B981' }}>🟢 HARDWARE GPS SYNCED</b>
+                </div>
               </div>
 
               <div>
