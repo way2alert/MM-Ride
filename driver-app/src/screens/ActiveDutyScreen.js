@@ -192,6 +192,18 @@ export default function ActiveDutyScreen({ navigation }) {
         coordinates: { latitude: curLat, longitude: curLng },
         timestamp: new Date().toISOString()
       }).catch(console.warn);
+
+      updateDoc(doc(db, 'drivers', driverProfile.id), {
+        geofenceBreach: true,
+        distFromHubKm,
+        lastGeofenceBreachAt: new Date().toISOString()
+      }).catch(console.warn);
+    } else if (!isGeofenceBreach && geofenceBreachLogged && driverProfile?.id) {
+      setGeofenceBreachLogged(false);
+      updateDoc(doc(db, 'drivers', driverProfile.id), {
+        geofenceBreach: false,
+        distFromHubKm
+      }).catch(console.warn);
     }
   }, [isGeofenceBreach, geofenceBreachLogged, driverProfile?.id, distFromHubKm, curLat, curLng]);
 

@@ -64,6 +64,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
     if (filterMode === 'OVERSPEED') return speed > speedThreshold;
     if (filterMode === 'OFF_DUTY_MOVING') return (!d.isCurrentlyOnDuty && !d.currentDutyId) && (speed > 5);
     if (filterMode === 'OFFLINE_CASH') return (d.lastPlatformRideEvent?.eventType === 'RIDE_CANCELLED') && (speed > 5);
+    if (filterMode === 'BORDER_BREACH') {
+      const hubLat = 13.0827;
+      const hubLng = 80.2707;
+      const lat = loc?.latitude || hubLat;
+      const lng = loc?.longitude || hubLng;
+      const distKm = Math.sqrt(Math.pow((lat - hubLat) * 111, 2) + Math.pow((lng - hubLng) * 111, 2));
+      return distKm > 45 || !!d.geofenceBreach;
+    }
     return true; // 'ALL'
   });
 
@@ -203,12 +211,12 @@ export default function LiveMonitoring({ onSelectDriver }) {
       const dLat = (loc.latitude - hubLat) * 111;
       const dLng = (loc.longitude - hubLng) * 111;
       const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
-      if (distKm > 45) {
+      if (distKm > 45 || driver.geofenceBreach) {
         return {
           level: 'CRITICAL',
           code: 'COMBINATION_B',
-          title: 'Geofence Breach (>45km)',
-          detail: `Vehicle located ${distKm.toFixed(1)} km outside authorized metropolitan operating perimeter.`
+          title: 'Inter-State / Border Breach 🚧',
+          detail: `Vehicle located ${distKm.toFixed(1)} km outside authorized metropolitan perimeter (heading towards outer district/border).`
         };
       }
     }
@@ -440,6 +448,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
             >
               🚖 Offline Cash Alert
             </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'BORDER_BREACH' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'BORDER_BREACH' ? '#FFF' : '#FCA5A5' }}
+              onClick={() => setFilterMode('BORDER_BREACH')}
+              title="Detect vehicles outside 45km metropolitan perimeter (Inter-State / Boundary Breach)"
+            >
+              🚧 Border Breach
+            </button>
           </div>
         </div>
 
@@ -517,10 +533,27 @@ export default function LiveMonitoring({ onSelectDriver }) {
                     {selectedDriver.lastKnownLocation?.speed || 0} km/h
                   </b>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ color: '#94A3B8' }}>Telemetry Update:</span>
                   <b>{formatDateTime(selectedDriver.lastKnownLocation?.timestamp)}</b>
                 </div>
+                {selectedDriver.lastKnownLocation?.latitude && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span style={{ color: '#94A3B8' }}>Hub Perimeter:</span>
+                    {(() => {
+                      const hLat = 13.0827, hLng = 80.2707;
+                      const dKm = Math.round(Math.sqrt(
+                        Math.pow((selectedDriver.lastKnownLocation.latitude - hLat) * 111, 2) + 
+                        Math.pow((selectedDriver.lastKnownLocation.longitude - hLng) * 111, 2)
+                      ));
+                      return (
+                        <b style={{ color: dKm > 45 ? '#EF4444' : dKm > 35 ? '#F59E0B' : '#10B981' }}>
+                          {dKm} km {dKm > 45 ? '(🚨 BORDER BREACH)' : dKm > 35 ? '(⚠️ BUFFER ZONE)' : '(SAFE)'}
+                        </b>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
 
               <div>
