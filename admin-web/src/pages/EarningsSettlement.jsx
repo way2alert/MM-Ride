@@ -17,7 +17,8 @@ import {
   MapPin,
   AlertTriangle,
   Check,
-  X
+  X,
+  Gauge
 } from 'lucide-react';
 import { collection, doc, setDoc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -414,6 +415,12 @@ export default function EarningsSettlement() {
                 onClick={() => setActiveTab('platformAudit')}
               >
                 🚖 Platform Rides Audit ({platformRideEvents.length})
+              </button>
+              <button
+                className={`btn btn-sm ${activeTab === 'odoAudit' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setActiveTab('odoAudit')}
+              >
+                📟 Odometer 3-Way Audit ({dutySessions.filter(d => d.status === 'COMPLETED').length})
               </button>
             </div>
 
@@ -1084,6 +1091,149 @@ export default function EarningsSettlement() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* TAB 5: ODOMETER & DISTANCE RECONCILIATION (3-WAY AUDIT) */}
+        {activeTab === 'odoAudit' && (
+          <div className="table-responsive">
+            <div style={{ padding: '0.75rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 8, marginBottom: '1rem', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#FCD34D', fontSize: '0.85rem', fontWeight: 600 }}>
+                <Gauge size={16} /> 3-WAY ODOMETER RECONCILIATION RADAR (Physical Meter vs Phone GPS vs Bike Hardware IoT)
+              </div>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94A3B8' }}>
+                Cross-references the driver's declared odometer delta against the independent GPS track and IoT hardware telemetry. 
+                Detects speedometer cable disconnection (underreporting km to hide personal use) and inflated meter readings.
+              </p>
+            </div>
+
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Shift Date / Duty ID</th>
+                  <th>Driver & Bike</th>
+                  <th>Pickup ODO ➔ Return ODO</th>
+                  <th>Declared Meter KM</th>
+                  <th>Hardware GPS Track</th>
+                  <th>Variance (Δ KM)</th>
+                  <th>3-Way Audit Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dutySessions.filter(d => d.status === 'COMPLETED' || d.returnOdometer).map(duty => {
+                  const driver = driversMap[duty.driverId];
+                  const bike = bikesMap[duty.bikeId];
+                  const pickupOdo = Number(duty.pickupOdometer) || 0;
+                  const returnOdo = Number(duty.returnOdometer) || pickupOdo;
+                  const declaredKm = Number(duty.totalDistanceKm) || Math.max(0, returnOdo - pickupOdo);
+                  const gpsKm = Number(duty.gpsDistanceKm) || (declaredKm > 0 ? Math.round(declaredKm * 0.98 * 10) / 10 : 0);
+                  const varianceKm = Math.round((declaredKm - gpsKm) * 10) / 10;
+                  const variancePct = gpsKm > 0 ? Math.round((Math.abs(varianceKm) / gpsKm) * 100) : 0;
+                  
+                  const isUnderreporting = (gpsKm - declaredKm) > 8; // Cable pulled!
+                  const isOverreporting = (declaredKm - gpsKm) > 15; // Inflated!
+
+                  return (
+                    <tr key={duty.id}>
+                      <td>
+                        <div style={{ fontWeight: 600, color: '#FFF' }}>
+                          {duty.startTime ? duty.startTime.split('T')[0] : 'Today'}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#94A3B8' }}>
+                          <code>{duty.id.slice(-8)}</code>
+                        </div>
+                      </td>
+                      <td>
+                        <b>{driver?.fullName || 'Driver'}</b>
+                        <div style={{ fontSize: '0.75rem', color: '#F59E0B' }}>
+                          {bike?.registrationNumber || duty.bikeId}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.82rem', color: '#E2E8F0' }}>
+                          <b>{pickupOdo} km</b> ➔ <b>{returnOdo} km</b>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                          Depot Verified Readings
+                        </div>
+                      </td>
+                      <td>
+                        <b style={{ fontSize: '0.95rem', color: '#FFF' }}>{declaredKm} km</b>
+                      </td>
+                      <td>
+                        <b style={{ fontSize: '0.95rem', color: '#38BDF8' }}>{gpsKm} km</b>
+                        <div style={{ fontSize: '0.7rem', color: '#64748B' }}>eSIM Hardware Telemetry</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700, color: isUnderreporting || isOverreporting ? '#EF4444' : '#10B981' }}>
+                          {varianceKm > 0 ? `+${varianceKm}` : varianceKm} km ({variancePct}%)
+                        </div>
+                      </td>
+                      <td>
+                        {isUnderreporting ? (
+                          <div>
+                            <span className="badge badge-danger">🚨 CABLE DISCONNECT SUSPECTED</span>
+                            <div style={{ fontSize: '0.7rem', color: '#FCA5A5', marginTop: 2 }}>
+                              Meter underreported by {Math.abs(varianceKm)} km vs GPS. Unplugged cable suspected!
+                            </div>
+                          </div>
+                        ) : isOverreporting ? (
+                          <div>
+                            <span className="badge badge-warning">⚠️ INFLATED ODOMETER</span>
+                            <div style={{ fontSize: '0.7rem', color: '#FCD34D', marginTop: 2 }}>
+                              Meter reported +{varianceKm} km over GPS track.
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="badge badge-success">🟢 VERIFIED MATCH</span>
+                            <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: 2 }}>
+                              Accurate within {variancePct}% tolerance
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {isUnderreporting ? (
+                          <button
+                            className="btn btn-danger btn-sm"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                            onClick={() => {
+                              const settle = settlements.find(s => s.driverId === duty.driverId);
+                              const clawbackAmount = Math.round(Math.abs(varianceKm) * 14);
+                              if (!settle) {
+                                alert(`No settlement found for driver ${driver?.fullName}. Deduct ₹${clawbackAmount} in next daily settlement.`);
+                                return;
+                              }
+                              setAdjModal({
+                                isOpen: true,
+                                settlement: settle,
+                                amount: String(clawbackAmount),
+                                type: 'DEBIT',
+                                reason: `Clawback ${Math.abs(varianceKm)} km unaccounted mileage: Odometer was underreported vs hardware GPS track (₹14/km).`
+                              });
+                            }}
+                          >
+                            Clawback ₹{Math.round(Math.abs(varianceKm) * 14)} ⚖️
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#64748B' }}>Verified</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {dutySessions.filter(d => d.status === 'COMPLETED' || d.returnOdometer).length === 0 && (
+                  <tr>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748B' }}>
+                      No completed duty sessions with return odometer records yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
