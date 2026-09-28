@@ -539,7 +539,18 @@ export async function endDutyBreak({ breakId, dutyId, startTime }) {
 /**
  * Submit Daily Earnings from Ola / Uber / Rapido summary
  */
-export async function submitDailyRideEarnings({ driverId, date, grossIncome, platformCharges, blob, uri, fileName }) {
+export async function submitDailyRideEarnings({ 
+  driverId, 
+  date, 
+  grossIncome, 
+  platformCharges, 
+  completedRidesCount = 0,
+  cancelledRidesCount = 0,
+  cashRidesCollected = 0,
+  blob, 
+  uri, 
+  fileName 
+}) {
   let screenshotUrl = null;
   let uploadBlob = blob;
   let closeAfterUpload = false;
@@ -562,6 +573,9 @@ export async function submitDailyRideEarnings({ driverId, date, grossIncome, pla
     date: date || new Date().toISOString().split('T')[0],
     grossIncome: Number(grossIncome),
     platformCharges: Number(platformCharges || 0),
+    completedRidesCount: Number(completedRidesCount || 0),
+    cancelledRidesCount: Number(cancelledRidesCount || 0),
+    cashRidesCollected: Number(cashRidesCollected || 0),
     screenshotUrl,
     status: 'PENDING',
     submittedAt: new Date().toISOString(),

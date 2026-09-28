@@ -18,6 +18,7 @@ import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
 import { colors } from '../utils/colors';
 import { logGpsBreadcrumb, uploadVerificationSelfie, confirmIdentityChallenge, submitFuelFillEntry } from '../firebase/api';
+import { processGigNotification } from '../services/gigRideWatcher';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
 
@@ -52,6 +53,12 @@ export default function ActiveDutyScreen({ navigation }) {
   const [meterPhoto, setMeterPhoto] = useState(null);
   const [receiptPhoto, setReceiptPhoto] = useState(null);
   const [submittingFuel, setSubmittingFuel] = useState(false);
+
+  // Platform Ride & Anti-Offline Cash Fraud State (Problem 4)
+  const [showRideSimModal, setShowRideSimModal] = useState(false);
+  const [activeRideEvent, setActiveRideEvent] = useState(null);
+  const [rideDistKm, setRideDistKm] = useState(0);
+  const [offlineCashAlertLogged, setOfflineCashAlertLogged] = useState(false);
 
   // In-Shift Live Face / Selfie Verification State
   const [identityPrompt, setIdentityPrompt] = useState(null);
@@ -382,6 +389,66 @@ export default function ActiveDutyScreen({ navigation }) {
     }
   };
 
+  // Trajectory Correlation: Detect Offline Cash Rides after Platform Cancellation (Problem 4)
+  useEffect(() => {
+    if (activeRideEvent && isSimulatingMovement) {
+      const stepDist = Math.round((simStep * 0.4) * 10) / 10;
+      setRideDistKm(stepDist);
+
+      if (activeRideEvent.eventType === 'RIDE_CANCELLED' && stepDist > 2.0 && !offlineCashAlertLogged && driverProfile?.id) {
+        setOfflineCashAlertLogged(true);
+        addDoc(collection(db, 'securityAlerts'), {
+          type: 'SUSPECTED_OFFLINE_CASH_RIDE',
+          driverId: driverProfile.id,
+          bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+          severity: 'CRITICAL',
+          message: `Vehicle moved ${stepDist} km after ride cancellation on ${activeRideEvent.platform}. Undeclared cash trip suspected.`,
+          timestamp: new Date().toISOString()
+        }).catch(console.warn);
+
+        if (activeRideEvent.id) {
+          updateDoc(doc(db, 'platformRideEvents', activeRideEvent.id), {
+            suspectedOfflineCashRide: true,
+            distanceAfterEventKm: stepDist
+          }).catch(console.warn);
+        }
+      }
+    }
+  }, [simStep, isSimulatingMovement, activeRideEvent, offlineCashAlertLogged, driverProfile?.id]);
+
+  const handleSimulateGigEvent = async (platform, eventType, text) => {
+    try {
+      const eventId = await processGigNotification({
+        packageName: platform === 'UBER' ? 'com.ubercab.driver' : platform === 'OLA' ? 'com.olacabs.partner' : 'com.rapido.rider',
+        title: `${platform} Captain`,
+        text,
+        driverId: driverProfile?.id,
+        dutyId: activeDutySession?.id,
+        bikeId: driverProfile?.assignedBikeId || assignedBike?.id,
+        currentLocation: currentLocation || { latitude: 13.0827, longitude: 80.2707, speed: 0 },
+        isSimulated: true
+      });
+
+      setActiveRideEvent({
+        id: eventId,
+        platform,
+        eventType,
+        text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+      setRideDistKm(0);
+      setOfflineCashAlertLogged(false);
+      setShowRideSimModal(false);
+
+      Alert.alert(
+        `${platform} Notification Captured 📲`,
+        `Event: ${eventType}\nTelemetry logged to Firebase for multi-sensor GPS trajectory correlation.`
+      );
+    } catch (e) {
+      Alert.alert('Simulation Error', e.message);
+    }
+  };
+
   const speedLimit = Number(systemSettings?.speedAlertThresholdKmh) || 60;
   const maxDutyHours = Number(systemSettings?.maxDutyHoursPerDay) || 12;
   const maxDutyMinutes = maxDutyHours * 60;
@@ -501,16 +568,73 @@ export default function ActiveDutyScreen({ navigation }) {
                 {isSimulatingMovement ? 'RIDE ACTIVE (Moving Live)' : 'LIVE GPS TRANSMITTING'}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.simButton, isSimulatingMovement && styles.simButtonActive]}
-              onPress={() => setIsSimulatingMovement(!isSimulatingMovement)}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.simButtonText, isSimulatingMovement && styles.simButtonTextActive]}>
-                {isSimulatingMovement ? '⏹️ Stop' : '🏍️ Test Ride'}
-              </Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                style={[styles.simButton, { backgroundColor: '#1E3A8A', borderColor: '#3B82F6' }]}
+                onPress={() => setShowRideSimModal(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.simButtonText, { color: '#93C5FD' }]}>
+                  📲 Gig Ping
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.simButton, isSimulatingMovement && styles.simButtonActive]}
+                onPress={() => setIsSimulatingMovement(!isSimulatingMovement)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.simButtonText, isSimulatingMovement && styles.simButtonTextActive]}>
+                  {isSimulatingMovement ? '⏹️ Stop' : '🏍️ Test Ride'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
+
+          {/* Active Gig Ride Telemetry Radar Banner */}
+          {activeRideEvent ? (
+            <View style={{
+              backgroundColor: activeRideEvent.eventType === 'RIDE_CANCELLED' && rideDistKm > 2.0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+              borderWidth: 1,
+              borderColor: activeRideEvent.eventType === 'RIDE_CANCELLED' && rideDistKm > 2.0 ? '#EF4444' : '#3B82F6',
+              borderRadius: 8,
+              padding: 8,
+              marginTop: 8,
+              marginBottom: 4
+            }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{
+                  color: activeRideEvent.eventType === 'RIDE_CANCELLED' && rideDistKm > 2.0 ? '#F87171' : '#93C5FD',
+                  fontWeight: '800',
+                  fontSize: 11
+                }}>
+                  {activeRideEvent.platform} • {activeRideEvent.eventType} ({activeRideEvent.timestamp})
+                </Text>
+                <Text style={{ color: '#F8FAFC', fontWeight: '700', fontSize: 11 }}>
+                  Traveled: {rideDistKm} km
+                </Text>
+              </View>
+              {activeRideEvent.eventType === 'RIDE_CANCELLED' && rideDistKm > 2.0 ? (
+                <Text style={{ color: '#FECACA', fontSize: 10, marginTop: 4, lineHeight: 14 }}>
+                  🚨 SUSPECTED OFFLINE CASH RIDE: Bike moved {rideDistKm} km after customer cancelled ride. Correlated with GPS & flagged for Admin Audit.
+                </Text>
+              ) : (
+                <Text style={{ color: '#CBD5E1', fontSize: 10, marginTop: 2 }}>
+                  Telemetry active: Multi-sensor GPS tracking correlated with ride notification.
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <Text style={{ fontSize: 10, color: '#10B981', fontWeight: '700' }}>
+                🟢 NOTIFICATION LISTENER ACTIVE:
+              </Text>
+              <Text style={{ fontSize: 10, color: '#94A3B8' }}>
+                Ola, Uber & Rapido pings filtered & monitored
+              </Text>
+            </View>
+          )}
+
           <Text style={styles.telemetrySub}>
             Location & speed are broadcast to Admin Live Monitoring every 6 seconds.
           </Text>
@@ -913,6 +1037,99 @@ export default function ActiveDutyScreen({ navigation }) {
                 <Text style={{ color: '#94A3B8', fontSize: 13, fontWeight: '600' }}>Cancel</Text>
               </TouchableOpacity>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Gig Aggregator Ride Ping Simulator Modal (Problem 4) */}
+      <Modal
+        visible={showRideSimModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowRideSimModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { borderColor: '#3B82F6', padding: 20 }]}>
+            <Text style={{ fontSize: 32, marginBottom: 6 }}>🚖</Text>
+            <Text style={[styles.idleTitle, { color: '#93C5FD', fontSize: 16 }]}>
+              Simulate Aggregator Ride Ping
+            </Text>
+            <Text style={[styles.idleTitleHindi, { color: '#CBD5E1', fontSize: 11, marginBottom: 12 }]}>
+              (Ola / Uber / Rapido Notification Listener Test)
+            </Text>
+            <Text style={{ color: '#94A3B8', fontSize: 11, textAlign: 'center', marginBottom: 16, lineHeight: 16 }}>
+              Simulate incoming notifications to test multi-sensor trajectory correlation & offline cash fraud detection.
+            </Text>
+
+            {/* Scenario 1: New Uber Request */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#1E293B',
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#3B82F6',
+                width: '100%',
+                marginBottom: 10
+              }}
+              onPress={() => handleSimulateGigEvent('UBER', 'RIDE_REQUEST', 'New Ride Request: Anna Nagar to T. Nagar • ₹240')}
+            >
+              <Text style={{ color: '#93C5FD', fontWeight: '800', fontSize: 12 }}>
+                1. 📲 Uber Ride Request (₹240 • 7.8 km)
+              </Text>
+              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                Simulates booking notification received on phone.
+              </Text>
+            </TouchableOpacity>
+
+            {/* Scenario 2: Customer Cancelled Ride */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#EF4444',
+                width: '100%',
+                marginBottom: 10
+              }}
+              onPress={() => handleSimulateGigEvent('UBER', 'RIDE_CANCELLED', 'Rider cancelled booking. No cancellation fee.')}
+            >
+              <Text style={{ color: '#F87171', fontWeight: '800', fontSize: 12 }}>
+                2. ❌ Customer Cancelled Ride ("Direct Cash" Attempt)
+              </Text>
+              <Text style={{ color: '#FECACA', fontSize: 11, marginTop: 2 }}>
+                Customer cancels in app. If bike subsequently moves &gt;2km, offline cash fraud is flagged!
+              </Text>
+            </TouchableOpacity>
+
+            {/* Scenario 3: Completed Ride */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#1E293B',
+                padding: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: '#10B981',
+                width: '100%',
+                marginBottom: 14
+              }}
+              onPress={() => handleSimulateGigEvent('OLA', 'RIDE_COMPLETED', 'Ride Completed. Cash to collect: ₹180')}
+            >
+              <Text style={{ color: '#34D399', fontWeight: '800', fontSize: 12 }}>
+                3. 🏁 Normal Completed Ride (₹180)
+              </Text>
+              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
+                Simulates legitimate trip completion recorded in platform summary.
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowRideSimModal(false)}
+              style={{ padding: 8, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#94A3B8', fontWeight: '600', fontSize: 12 }}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

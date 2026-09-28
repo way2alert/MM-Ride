@@ -63,6 +63,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
     if (filterMode === 'IDLE') return speed === 0;
     if (filterMode === 'OVERSPEED') return speed > speedThreshold;
     if (filterMode === 'OFF_DUTY_MOVING') return (!d.isCurrentlyOnDuty && !d.currentDutyId) && (speed > 5);
+    if (filterMode === 'OFFLINE_CASH') return (d.lastPlatformRideEvent?.eventType === 'RIDE_CANCELLED') && (speed > 5);
     return true; // 'ALL'
   });
 
@@ -179,6 +180,20 @@ export default function LiveMonitoring({ onSelectDriver }) {
         title: 'Vehicle Moving While Duty OFF 🚨',
         detail: `Vehicle in motion at ${speed} km/h while driver duty is OFF (Unauthorized personal use detected).`
       };
+    }
+
+    // Problem 4: Suspected Offline Cash Ride (Platform Ride Cancelled + Continued Movement)
+    if (driver.lastPlatformRideEvent?.eventType === 'RIDE_CANCELLED' && speed > 5) {
+      const cancelMs = driver.lastPlatformRideEvent.timestamp ? new Date(driver.lastPlatformRideEvent.timestamp).getTime() : 0;
+      const minsSinceCancel = Math.round((Date.now() - cancelMs) / 60000);
+      if (minsSinceCancel <= 45) {
+        return {
+          level: 'CRITICAL',
+          code: 'OFFLINE_CASH_RIDE',
+          title: 'Offline Cash Ride Suspected 🚨',
+          detail: `Vehicle moving at ${speed} km/h after ride cancellation on ${driver.lastPlatformRideEvent.platform} (${minsSinceCancel}m ago). Customer induced cash trip suspected.`
+        };
+      }
     }
 
     // Combination B: Out of Metro Zone / Geofence breach (> 40km from Chennai Central)
@@ -416,6 +431,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
               title="Detect vehicles in motion with Duty OFF (Personal Use Violation)"
             >
               🚨 Off-Duty Moving
+            </button>
+            <button
+              className={`btn btn-sm ${filterMode === 'OFFLINE_CASH' ? 'btn-danger' : 'btn-secondary'}`}
+              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'OFFLINE_CASH' ? '#FFF' : '#FCA5A5' }}
+              onClick={() => setFilterMode('OFFLINE_CASH')}
+              title="Detect vehicles moving after platform ride cancellation (Offline Cash Fraud)"
+            >
+              🚖 Offline Cash Alert
             </button>
           </div>
         </div>

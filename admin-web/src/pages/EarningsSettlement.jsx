@@ -11,6 +11,7 @@ import {
   Fuel, 
   Smartphone, 
   ShieldCheck, 
+  ShieldAlert,
   Info,
   Image as ImageIcon,
   MapPin,
@@ -31,7 +32,8 @@ export default function EarningsSettlement() {
   const [fuelExpenses, setFuelExpenses] = useState([]);
   const [bikes, setBikes] = useState([]);
   const [dutySessions, setDutySessions] = useState([]);
-  const [activeTab, setActiveTab] = useState('settlements'); // settlements, submissions, fuel
+  const [platformRideEvents, setPlatformRideEvents] = useState([]);
+  const [activeTab, setActiveTab] = useState('settlements'); // settlements, submissions, fuel, platformAudit
 
   const [createModal, setCreateModal] = useState(false);
   const [payoutModal, setPayoutModal] = useState({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI' });
@@ -60,6 +62,7 @@ export default function EarningsSettlement() {
     const unsubFuel = subscribeToCollection('fuelExpenses', setFuelExpenses);
     const unsubBikes = subscribeToCollection('bikes', setBikes);
     const unsubDuties = subscribeToCollection('dutySessions', setDutySessions);
+    const unsubPlatform = subscribeToCollection('platformRideEvents', setPlatformRideEvents);
     return () => {
       unsubSubmissions();
       unsubSettlements();
@@ -67,6 +70,7 @@ export default function EarningsSettlement() {
       unsubFuel();
       unsubBikes();
       unsubDuties();
+      unsubPlatform();
     };
   }, []);
 
@@ -404,6 +408,13 @@ export default function EarningsSettlement() {
               >
                 ⛽ Fuel Ledger ({fuelExpenses.length})
               </button>
+              <button
+                className={`btn btn-sm ${activeTab === 'platformAudit' ? 'btn-primary' : 'btn-secondary'}`}
+                style={platformRideEvents.some(e => e.suspectedOfflineCashRide || (e.eventType === 'RIDE_CANCELLED' && e.distanceAfterEventKm > 2)) ? { borderColor: '#EF4444', color: '#FCA5A5' } : {}}
+                onClick={() => setActiveTab('platformAudit')}
+              >
+                🚖 Platform Rides Audit ({platformRideEvents.length})
+              </button>
             </div>
 
             <button className="btn btn-primary" onClick={() => {
@@ -545,7 +556,8 @@ export default function EarningsSettlement() {
                   <th>Driver</th>
                   <th>Date</th>
                   <th>Reported Gross</th>
-                  <th>Reported Deductions</th>
+                  <th>Completed / Cancels</th>
+                  <th>Cash Collected</th>
                   <th>Supporting Screenshot</th>
                   <th>Status</th>
                   <th>Action</th>
@@ -562,15 +574,33 @@ export default function EarningsSettlement() {
                         <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{sub.driverId}</div>
                       </td>
                       <td>{sub.date}</td>
-                      <td><b>{formatCurrency(sub.grossIncome)}</b></td>
-                      <td style={{ color: '#EF4444' }}>-{formatCurrency(sub.platformCharges || 0)}</td>
+                      <td>
+                        <b>{formatCurrency(sub.grossIncome)}</b>
+                        <div style={{ fontSize: '0.72rem', color: '#EF4444' }}>Comm: -{formatCurrency(sub.platformCharges || 0)}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#FFF' }}>
+                          {sub.completedRidesCount || '—'} Done • {sub.cancelledRidesCount || 0} Cancels
+                        </div>
+                        {Number(sub.cancelledRidesCount) > 2 && (
+                          <span className="badge badge-warning" style={{ fontSize: '0.65rem', marginTop: 2 }}>
+                            ⚠️ {sub.cancelledRidesCount} Cancelled Rides
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700, color: '#F59E0B', fontSize: '0.9rem' }}>
+                          ₹{sub.cashRidesCollected || 0}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Cash Passenger Fares</div>
+                      </td>
                       <td>
                         {sub.screenshotUrl ? (
                           <a href={sub.screenshotUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">
-                            <ExternalLink size={13} /> View Ola/Uber Proof
+                            <ExternalLink size={13} /> View Proof
                           </a>
                         ) : (
-                          <span style={{ color: '#64748B' }}>No photo attached</span>
+                          <span style={{ color: '#64748B', fontSize: '0.75rem' }}>No photo attached</span>
                         )}
                       </td>
                       <td>
@@ -848,6 +878,206 @@ export default function EarningsSettlement() {
                     <tr>
                       <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: '#64748B' }}>
                         No fuel expenses logged yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: PLATFORM RIDE NOTIFICATIONS & OFFLINE CASH RADAR (Problem 4) */}
+        {activeTab === 'platformAudit' && (
+          <div>
+            {/* Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+              <div className="card" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#60A5FA', textTransform: 'uppercase' }}>
+                  Total Platform Pings
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FFF', marginTop: 4 }}>
+                  {platformRideEvents.length} Events
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Ola, Uber & Rapido Telemetry
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#10B981', textTransform: 'uppercase' }}>
+                  Platform Completed Trips
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10B981', marginTop: 4 }}>
+                  {platformRideEvents.filter(e => e.eventType === 'RIDE_COMPLETED').length} Trips
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Verified In-App Completions
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#F59E0B', textTransform: 'uppercase' }}>
+                  App-Cancelled Bookings
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#F59E0B', marginTop: 4 }}>
+                  {platformRideEvents.filter(e => e.eventType === 'RIDE_CANCELLED').length} Cancels
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Subject to Trajectory Audit
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#EF4444', textTransform: 'uppercase' }}>
+                  Suspected Offline Cash Trips
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#EF4444', marginTop: 4 }}>
+                  {platformRideEvents.filter(e => e.suspectedOfflineCashRide || (e.eventType === 'RIDE_CANCELLED' && e.distanceAfterEventKm > 2)).length} Violations
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2 }}>
+                  Vehicle moved &gt;2km after cancel
+                </div>
+              </div>
+            </div>
+
+            {/* Educational Heuristic Protocol Banner */}
+            <div style={{ padding: '0.85rem 1rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 10, marginBottom: '1.25rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#EF4444', fontSize: '0.88rem', fontWeight: 700 }}>
+                <ShieldAlert size={17} /> OFFLINE CASH RIDE DETECTION RADAR (Induced App Cancellation Defense)
+              </div>
+              <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: '#CBD5E1', lineHeight: 1.5 }}>
+                When a customer or driver cancels a ride on Ola/Uber/Rapido, but the vehicle immediately accelerates and executes a <b>&gt;2 km journey</b>, the system automatically detects an <b>Offline Direct Cash Ride</b>. Unaccounted mileage is calculated into an estimated stolen fare (@ ₹14/km) and clawed back during daily settlement.
+              </p>
+            </div>
+
+            <div className="table-responsive">
+              <table className="custom-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Driver & Bike</th>
+                    <th>Platform</th>
+                    <th>Notification Event</th>
+                    <th>Subsequent GPS Movement</th>
+                    <th>Fraud Radar Assessment</th>
+                    <th>Est. Undeclared Fare</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {platformRideEvents.map(e => {
+                    const driver = driversMap[e.driverId];
+                    const bike = bikesMap[e.bikeId];
+                    const isSuspectedFraud = e.suspectedOfflineCashRide || (e.eventType === 'RIDE_CANCELLED' && e.distanceAfterEventKm > 2);
+                    const estFare = Math.round((e.distanceAfterEventKm || 0) * 14);
+
+                    return (
+                      <tr key={e.id} style={isSuspectedFraud ? { background: 'rgba(239, 68, 68, 0.05)' } : {}}>
+                        <td>
+                          <div style={{ fontWeight: 600, color: '#FFF' }}>
+                            {e.timestamp ? new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#94A3B8' }}>
+                            {e.timestamp ? e.timestamp.split('T')[0] : ''}
+                          </div>
+                        </td>
+                        <td>
+                          <b>{driver?.fullName || 'Driver'}</b>
+                          <div style={{ fontSize: '0.75rem', color: '#60A5FA' }}>
+                            {bike?.registrationNumber || driver?.assignedBikeRegistration || 'Assigned Bike'}
+                          </div>
+                        </td>
+                        <td>
+                          <span className="badge badge-neutral" style={{ fontWeight: 700 }}>
+                            {e.platform}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600, color: e.eventType === 'RIDE_CANCELLED' ? '#EF4444' : e.eventType === 'RIDE_COMPLETED' ? '#10B981' : '#60A5FA' }}>
+                            {e.eventType}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#CBD5E1', maxWidth: 200 }} numberOfLines={1}>
+                            {e.title ? `${e.title}: ` : ''}{e.textSnippet || ''}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 700, color: '#FFF' }}>
+                            {e.distanceAfterEventKm ? `${e.distanceAfterEventKm.toFixed(1)} km` : '0 km'}
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                            Traveled after ping
+                          </div>
+                        </td>
+                        <td>
+                          {isSuspectedFraud ? (
+                            <div>
+                              <span className="badge badge-danger">
+                                🚨 SUSPECTED OFFLINE CASH
+                              </span>
+                              <div style={{ fontSize: '0.7rem', color: '#FCA5A5', marginTop: 2 }}>
+                                Cancelled in app, but bike traveled {e.distanceAfterEventKm?.toFixed(1)} km
+                              </div>
+                            </div>
+                          ) : e.eventType === 'RIDE_CANCELLED' ? (
+                            <div>
+                              <span className="badge badge-neutral">
+                                ⚪ Genuine Cancellation
+                              </span>
+                              <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: 2 }}>
+                                Vehicle stayed stationary (&lt;500m)
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="badge badge-success">
+                              🟢 Normal Operational Ping
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {isSuspectedFraud ? (
+                            <div>
+                              <b style={{ color: '#F59E0B', fontSize: '0.95rem' }}>₹{estFare}</b>
+                              <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Est. Stolen Cash</div>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748B' }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          {isSuspectedFraud ? (
+                            <button
+                              className="btn btn-danger btn-sm"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                              onClick={() => {
+                                const settle = settlements.find(s => s.driverId === e.driverId);
+                                if (!settle) {
+                                  alert(`No active settlement found for driver ${driver?.fullName}. You can deduct this in their next daily settlement.`);
+                                  return;
+                                }
+                                setAdjModal({
+                                  isOpen: true,
+                                  settlement: settle,
+                                  amount: String(estFare),
+                                  type: 'DEBIT',
+                                  reason: `Clawback undeclared offline cash trip on ${e.platform}: Cancelled in app but vehicle traveled ${e.distanceAfterEventKm?.toFixed(1)} km.`
+                                });
+                              }}
+                            >
+                              Clawback Fare ⚖️
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: '#64748B' }}>Logged</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {platformRideEvents.length === 0 && (
+                    <tr>
+                      <td colSpan="8" style={{ textAlign: 'center', padding: '2.5rem', color: '#64748B' }}>
+                        No platform ride events logged yet. Drivers will broadcast Ola/Uber/Rapido telemetry automatically while on duty.
                       </td>
                     </tr>
                   )}

@@ -21,6 +21,9 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [grossIncome, setGrossIncome] = useState('');
   const [platformCharges, setPlatformCharges] = useState('');
+  const [completedRides, setCompletedRides] = useState('');
+  const [cancelledRides, setCancelledRides] = useState('0');
+  const [cashCollected, setCashCollected] = useState('0');
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -81,6 +84,9 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
         date,
         grossIncome: Number(grossIncome),
         platformCharges: Number(platformCharges || 0),
+        completedRidesCount: Number(completedRides || 0),
+        cancelledRidesCount: Number(cancelledRides || 0),
+        cashRidesCollected: Number(cashCollected || 0),
         uri: imageUri,
         fileName: 'platform_summary.jpg'
       });
@@ -127,13 +133,16 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
         <Text style={{ color: '#FDE68A', fontSize: 12, lineHeight: 18, marginBottom: 6 }}>
           2. <Text style={{ fontWeight: 'bold' }}>Cash Rides Compulsory:</Text> பயணியிடம் நேரடியாக வாங்கிய Cash Ride தொகையை மொத்த வருமானத்தில் (Gross Income) கண்டிப்பாக சேர்க்க வேண்டும்.
         </Text>
-        <Text style={{ color: '#FDE68A', fontSize: 12, lineHeight: 18 }}>
+        <Text style={{ color: '#FDE68A', fontSize: 12, lineHeight: 18, marginBottom: 6 }}>
           3. <Text style={{ fontWeight: 'bold' }}>Petrol Separate Owner Expense:</Text> பெட்ரோல் செலவு ஓனருடையது — ரைடு வருமானத்தில் இருந்து கழிக்கக்கூடாது. பெட்ரோல் ரசீதை ஓனரிடம் தனியாக சமர்ப்பிக்க வேண்டும்.
+        </Text>
+        <Text style={{ color: '#FDE68A', fontSize: 12, lineHeight: 18 }}>
+          4. <Text style={{ fontWeight: 'bold' }}>Anti-Offline Cash Ride Rule:</Text> பயணியிடம் ஆப்-ஐ கேன்சல் செய்யச் சொல்லி நேரடி ரொக்கம் (Offline Cash) பெறுவது கடுமையான குற்றமாகும். ஆப் நோட்டிபிகேஷன் மற்றும் GPS ரூட் ஒப்பிடப்பட்டு தணிக்கை செய்யப்படும்.
         </Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Shift Financial Summary</Text>
+        <Text style={styles.cardTitle}>Shift Financial & Trip Summary</Text>
 
         <Text style={styles.label}>Shift Date (YYYY-MM-DD) *</Text>
         <TextInput
@@ -160,6 +169,36 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
           keyboardType="numeric"
           value={platformCharges}
           onChangeText={setPlatformCharges}
+        />
+
+        <Text style={styles.label}>Total Completed Rides Count *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 14"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numeric"
+          value={completedRides}
+          onChangeText={setCompletedRides}
+        />
+
+        <Text style={styles.label}>Customer / Driver Cancelled Rides Count</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 2"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numeric"
+          value={cancelledRides}
+          onChangeText={setCancelledRides}
+        />
+
+        <Text style={styles.label}>Direct Cash Rides Fares Collected (₹) (Included in Gross)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 650"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numeric"
+          value={cashCollected}
+          onChangeText={setCashCollected}
         />
 
         {/* Calculated Preview */}
