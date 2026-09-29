@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  TouchableOpacity
+  TouchableOpacity,
+  Image
 } from 'react-native';
 import { signInWithPhoneNumber, PhoneAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
@@ -24,6 +25,15 @@ export default function LoginScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [showRecaptcha, setShowRecaptcha] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCountdown]);
 
   const handleInitiateSendOtp = () => {
     const cleanedPhone = phoneNumber.trim().replace(/\D/g, '').slice(-10);
@@ -90,6 +100,7 @@ export default function LoginScreen({ navigation }) {
       setConfirmationResult(confirmation);
       setOtpSent(true);
       setOtp('');
+      setResendCountdown(60);
 
       Alert.alert(
         'Official SMS Dispatched 📲',
@@ -142,6 +153,7 @@ export default function LoginScreen({ navigation }) {
       // 1. Authenticate with real Firebase SMS OTP
       const userCredential = await confirmationResult.confirm(enteredOtp);
       const user = userCredential.user;
+      const cleanedPhone = (user.phoneNumber ? user.phoneNumber.replace(/\D/g, '').slice(-10) : '') || phoneNumber.trim().replace(/\D/g, '').slice(-10);
       // Get unique Android Hardware / Device ID
       let hardwareId = 'device_company_default';
       try {
@@ -222,9 +234,11 @@ export default function LoginScreen({ navigation }) {
       />
 
       <View style={styles.logoSection}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>MM</Text>
-        </View>
+        <Image
+          source={require('../../assets/logo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
         <Text style={styles.appName}>MM RIDE</Text>
         <Text style={styles.tagline}>Driver Partner Application</Text>
       </View>
@@ -271,10 +285,25 @@ export default function LoginScreen({ navigation }) {
               autoFocus={true}
             />
             <View style={styles.otpActionRow}>
-              <TouchableOpacity onPress={handleInitiateSendOtp} style={styles.resendBtn}>
-                <Text style={styles.resendText}>📩 Resend SMS</Text>
+              <TouchableOpacity
+                onPress={handleInitiateSendOtp}
+                style={[styles.resendBtn, resendCountdown > 0 && styles.resendBtnDisabled]}
+                disabled={resendCountdown > 0 || loading}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.resendText, resendCountdown > 0 && styles.resendTextDisabled]}>
+                  {resendCountdown > 0 ? `⏳ Resend in ${resendCountdown}s` : '📩 Resend SMS'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setOtpSent(false)} style={styles.changePhoneBtn}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOtpSent(false);
+                  setOtp('');
+                  setResendCountdown(0);
+                }}
+                style={styles.changePhoneBtn}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.changePhoneText}>✏️ Change Number</Text>
               </TouchableOpacity>
             </View>
@@ -317,6 +346,12 @@ const styles = StyleSheet.create({
   logoSection: {
     alignItems: 'center',
     marginBottom: 30
+  },
+  logoImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 20,
+    marginBottom: 12
   },
   logoBadge: {
     width: 68,
@@ -428,10 +463,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10
   },
+  resendBtnDisabled: {
+    opacity: 0.6
+  },
   resendText: {
     color: colors.primary,
     fontSize: 13,
     fontWeight: '700'
+  },
+  resendTextDisabled: {
+    color: colors.textMuted
   },
   changePhoneBtn: {
     paddingVertical: 8,

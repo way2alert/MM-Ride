@@ -7,7 +7,8 @@ import {
   TouchableOpacity, 
   Alert,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
+  Linking
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -199,10 +200,22 @@ export default function DocumentUploadScreen({ navigation }) {
 
       Alert.alert(
         'Documents Submitted! 🎉',
-        'All 5 live photos uploaded successfully. The MM Ride fleet team will review and approve your profile shortly.',
+        'All 5 live photos uploaded successfully. Notify the fleet admin on WhatsApp for fast 5-minute approval.',
         [
           {
-            text: 'View Status',
+            text: '💬 WhatsApp Admin (7200723901)',
+            onPress: () => {
+              const text = encodeURIComponent(
+                `Namaste MM Ride Admin,\nI have registered as a Driver and successfully uploaded all 5 KYC documents on the MM Ride App.\n\n👤 Name: ${driverProfile?.fullName || 'Partner'}\n📱 Mobile: ${driverProfile?.mobileNumber || ''}\n🪪 DL: ${driverProfile?.dlNumber || ''}\n\nPlease review and approve my account!`
+              );
+              Linking.openURL(`https://wa.me/917200723901?text=${text}`).catch(() => {});
+              if (navigation?.navigate) {
+                navigation.navigate('VerificationStatus');
+              }
+            }
+          },
+          {
+            text: 'View Status ➔',
             onPress: () => {
               if (navigation?.navigate) {
                 navigation.navigate('VerificationStatus');

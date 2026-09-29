@@ -142,7 +142,29 @@ export default function Verification() {
                   <tr key={d.id}>
                     <td>
                       <div style={{ fontWeight: 600, color: '#FFF' }}>{driver?.fullName || d.driverName || 'Driver'}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{d.driverId}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#94A3B8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>📱 {driver?.mobileNumber || 'N/A'}</span>
+                        {driver?.mobileNumber && (
+                          <a
+                            href={`https://wa.me/91${driver.mobileNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hello ${driver.fullName || 'Partner'}, this is MM Ride Operations regarding your document verification.`)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              backgroundColor: 'rgba(37, 211, 102, 0.15)',
+                              color: '#25D366',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              fontSize: '0.7rem',
+                              textDecoration: 'none',
+                              fontWeight: 700
+                            }}
+                            title="Chat with driver on WhatsApp"
+                          >
+                            💬 WhatsApp
+                          </a>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#64748B' }}>ID: {d.driverId}</div>
                     </td>
                     <td><b>{d.type || 'ID Document'}</b></td>
                     <td><code>{d.documentNumber || '—'}</code></td>

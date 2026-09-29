@@ -43,22 +43,18 @@ export default function Login() {
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
       }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{
-            width: 52,
-            height: 52,
-            borderRadius: 14,
-            background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-            color: '#000',
-            fontWeight: 800,
-            fontSize: '1.4rem',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 25px rgba(245, 158, 11, 0.4)',
-            marginBottom: '1rem'
-          }}>
-            MM
-          </div>
+          <img
+            src="/logo.png"
+            alt="MM Ride"
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 16,
+              objectFit: 'contain',
+              boxShadow: '0 0 25px rgba(245, 158, 11, 0.3)',
+              marginBottom: '1rem'
+            }}
+          />
           <h2 style={{ fontSize: '1.5rem', color: '#FFF', fontWeight: 700 }}>MM RIDE ADMIN</h2>
           <p style={{ color: '#94A3B8', fontSize: '0.85rem', marginTop: '0.3rem' }}>
             Operations & Fleet Management Portal

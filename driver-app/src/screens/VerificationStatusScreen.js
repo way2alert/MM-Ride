@@ -85,6 +85,43 @@ export default function VerificationStatusScreen({ navigation }) {
       });
   };
 
+  const sendWhatsAppAlert = (targetPhone = '7200723901') => {
+    const cleanNumber = targetPhone.replace(/\D/g, '');
+    const fullNumber = cleanNumber.startsWith('91') ? cleanNumber : `91${cleanNumber}`;
+    const text = encodeURIComponent(
+      `Namaste MM Ride Admin,\nI have registered as a Driver and uploaded my KYC documents on the MM Ride App.\n\n👤 Name: ${driverProfile?.fullName || 'Partner'}\n📱 Mobile: ${driverProfile?.mobileNumber || ''}\n🪪 DL: ${driverProfile?.dlNumber || ''}\n🆔 Aadhaar: ${driverProfile?.aadhaarNumber || ''}\n\nPlease review and approve my account so I can start duty!`
+    );
+    const waUrl = `https://wa.me/${fullNumber}?text=${text}`;
+    Linking.openURL(waUrl).catch(() => {
+      Alert.alert('Notice', 'Unable to open WhatsApp on this device.');
+    });
+  };
+
+  const handleSelectAdminForWhatsApp = () => {
+    Alert.alert(
+      '💬 Choose Admin WhatsApp Contact',
+      'Select which fleet admin to message for fast verification approval:',
+      [
+        {
+          text: 'Admin 1 (Primary): 7200723901',
+          onPress: () => sendWhatsAppAlert('7200723901')
+        },
+        {
+          text: 'Admin 2: 9976294844',
+          onPress: () => sendWhatsAppAlert('9976294844')
+        },
+        {
+          text: 'Admin 3: 9841307455',
+          onPress: () => sendWhatsAppAlert('9841307455')
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Confetti Explosion Animation for Approved Drivers */}
@@ -276,6 +313,22 @@ export default function VerificationStatusScreen({ navigation }) {
             <View style={{ marginTop: 14 }}>
               <StatusBadge status="PENDING" label="UNDER REVIEW" />
             </View>
+
+            <TouchableOpacity
+              style={styles.whatsappAlertBtn}
+              onPress={() => sendWhatsAppAlert('7200723901')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.whatsappAlertBtnText}>💬 WhatsApp Admin (7200723901) for 5-Min Fast Approval</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.backupAdminBtn}
+              onPress={handleSelectAdminForWhatsApp}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.backupAdminBtnText}>📱 Other Admin WhatsApp Numbers (9976294844 / 9841307455)</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -685,5 +738,42 @@ const styles = StyleSheet.create({
   },
   stepCheck: {
     fontSize: 16
+  },
+  whatsappAlertBtn: {
+    backgroundColor: '#25D366',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    shadowColor: '#25D366',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4
+  },
+  whatsappAlertBtnText: {
+    color: '#000',
+    fontWeight: '800',
+    fontSize: 13
+  },
+  backupAdminBtn: {
+    marginTop: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%'
+  },
+  backupAdminBtnText: {
+    color: colors.primaryLight,
+    fontSize: 12,
+    fontWeight: '700'
   }
 });

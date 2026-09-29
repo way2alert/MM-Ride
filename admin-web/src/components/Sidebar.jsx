@@ -17,15 +17,37 @@ import {
   LogOut 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 export default function Sidebar({ currentTab, setTab }) {
   const { currentUser, userRole, logout } = useAuth();
+  const [pendingVerifCount, setPendingVerifCount] = useState(0);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'drivers'), (snap) => {
+      let count = 0;
+      snap.forEach(d => {
+        const data = d.data();
+        if (
+          data.approvalStatus === 'PENDING' ||
+          data.accountStatus === 'DOCUMENT_VERIFICATION_PENDING' ||
+          data.accountStatus === 'DOCUMENTS_SUBMITTED' ||
+          data.verificationStatus === 'PENDING'
+        ) {
+          count++;
+        }
+      });
+      setPendingVerifCount(count);
+    });
+    return () => unsub();
+  }, []);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'live-map', label: 'Live Monitoring', icon: MapPin },
-    { id: 'drivers', label: 'Drivers', icon: Users },
-    { id: 'verification', label: 'Doc Verification', icon: FileCheck2 },
+    { id: 'drivers', label: 'Drivers', icon: Users, badge: pendingVerifCount },
+    { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
     { id: 'address-verif', label: 'Address Verification', icon: Home },
     { id: 'bikes', label: 'Fleet Bikes', icon: Bike },
     { id: 'hubs', label: 'Hubs & Depots', icon: Warehouse },
@@ -41,7 +63,7 @@ export default function Sidebar({ currentTab, setTab }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="brand-logo-badge">MM</div>
+        <img src="/logo.png" alt="MM Ride Logo" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'contain' }} />
         <div className="brand-text">
           <h1>MM RIDE</h1>
           <span>ADMIN PLATFORM</span>
@@ -61,6 +83,20 @@ export default function Sidebar({ currentTab, setTab }) {
             >
               <Icon size={18} />
               <span>{item.label}</span>
+              {item.badge > 0 && (
+                <span style={{
+                  marginLeft: 'auto',
+                  backgroundColor: '#EF4444',
+                  color: '#FFF',
+                  fontSize: '0.68rem',
+                  fontWeight: '800',
+                  padding: '2px 7px',
+                  borderRadius: 9999,
+                  boxShadow: '0 0 10px rgba(239, 68, 68, 0.5)'
+                }}>
+                  {item.badge}
+                </span>
+              )}
             </button>
           );
         })}

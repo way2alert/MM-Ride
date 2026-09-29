@@ -88,7 +88,7 @@ service cloud.firestore {
           ])
         )
       ) || isAdmin();
-      allow delete: if false; // No hard deletes
+      allow delete: if isAdmin(); // Allow Admin to delete / reset test drivers
     }
 
     // Driver Documents
@@ -165,7 +165,7 @@ service cloud.firestore {
       allow update: if isOperations() || (
         isAuthenticated() && resource.data.driverId == request.auth.uid
       );
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /bikeReturns/{returnId} {
@@ -176,7 +176,19 @@ service cloud.firestore {
         request.resource.data.driverId == request.auth.uid || isOperations()
       );
       allow update: if isOperations();
-      allow delete: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /securityAlerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /platformRideEvents/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     // Duty Sessions & Breaks
@@ -366,7 +378,8 @@ service cloud.firestore {
     match /auditLogs/{logId} {
       allow read: if isAdmin();
       allow create: if isAuthenticated();
-      allow update, delete: if false; // NEVER allowed to update or delete audit records!
+      allow update: if false;
+      allow delete: if isAdmin();
     }
   }
 }

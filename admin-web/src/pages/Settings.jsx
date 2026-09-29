@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, ShieldAlert } from 'lucide-react';
+import { Settings as SettingsIcon, Save, ShieldAlert, MessageSquare } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { logAdminAudit } from '../firebase/services';
@@ -12,7 +12,10 @@ export default function Settings() {
     workerSharePercent: 50,
     ownerSharePercent: 50,
     reserveHoldPercent: 10,
-    defaultGeofenceRadiusMeters: 300
+    defaultGeofenceRadiusMeters: 300,
+    primaryAdminWhatsapp: '7200723901',
+    adminAlertPhone2: '9976294844',
+    adminAlertPhone3: '9841307455'
   });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -22,7 +25,14 @@ export default function Settings() {
       try {
         const snap = await getDoc(doc(db, 'settings', 'system'));
         if (snap.exists()) {
-          setSettings(prev => ({ ...prev, ...snap.data() }));
+          const data = snap.data();
+          setSettings(prev => ({ 
+            ...prev, 
+            ...data,
+            primaryAdminWhatsapp: data.primaryAdminWhatsapp || '7200723901',
+            adminAlertPhone2: (data.adminAlertPhones && data.adminAlertPhones[1]) || data.adminAlertPhone2 || '9976294844',
+            adminAlertPhone3: (data.adminAlertPhones && data.adminAlertPhones[2]) || data.adminAlertPhone3 || '9841307455'
+          }));
         }
       } catch (err) {
         console.warn('Using default policy settings:', err.message);
@@ -35,8 +45,13 @@ export default function Settings() {
     e.preventDefault();
     setLoading(true);
     try {
+      const phones = [settings.primaryAdminWhatsapp, settings.adminAlertPhone2, settings.adminAlertPhone3]
+        .map(p => (p || '').trim())
+        .filter(Boolean);
+
       await setDoc(doc(db, 'settings', 'system'), {
         ...settings,
+        adminAlertPhones: phones,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -145,6 +160,102 @@ export default function Settings() {
                 <label className="form-label">Temporary Hold</label>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#F59E0B' }}>10%</div>
                 <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Held in settlement reserve</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Admin Verification & WhatsApp Alert Numbers */}
+          <div style={{ 
+            background: 'rgba(37, 211, 102, 0.08)',
+            border: '1px solid rgba(37, 211, 102, 0.3)',
+            borderRadius: 10,
+            padding: '1.25rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MessageSquare size={18} color="#25D366" />
+                <h4 style={{ color: '#86EFAC', fontSize: '0.95rem', margin: 0, fontWeight: 700 }}>
+                  Admin WhatsApp & Instant Alert Phone Numbers
+                </h4>
+              </div>
+              <span className="badge" style={{ backgroundColor: '#25D366', color: '#000', fontWeight: 800 }}>
+                Instant KYC Alerts Active
+              </span>
+            </div>
+
+            <p style={{ color: '#CBD5E1', fontSize: '0.78rem', marginBottom: '1rem', lineHeight: 1.4 }}>
+              When new drivers register and submit KYC documents, the driver app provides instant 1-tap WhatsApp notifications to these numbers for rapid 5-minute verification & approval.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label" style={{ color: '#86EFAC' }}>
+                  Primary Admin WhatsApp *
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.primaryAdminWhatsapp || ''}
+                  onChange={(e) => setSettings({ ...settings, primaryAdminWhatsapp: e.target.value })}
+                  placeholder="7200723901"
+                  required
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Main Owner Contact</span>
+                  <a
+                    href={`https://wa.me/91${(settings.primaryAdminWhatsapp || '').replace(/\D/g, '')}?text=MM%20Ride%20Admin%20Alert%20Test`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: '0.7rem', color: '#25D366', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    Test WhatsApp ➔
+                  </a>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Backup Admin 2</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.adminAlertPhone2 || ''}
+                  onChange={(e) => setSettings({ ...settings, adminAlertPhone2: e.target.value })}
+                  placeholder="9976294844"
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Operations Hub</span>
+                  <a
+                    href={`https://wa.me/91${(settings.adminAlertPhone2 || '').replace(/\D/g, '')}?text=MM%20Ride%20Admin%20Alert%20Test`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: '0.7rem', color: '#25D366', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    Test WhatsApp ➔
+                  </a>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Backup Admin 3</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.adminAlertPhone3 || ''}
+                  onChange={(e) => setSettings({ ...settings, adminAlertPhone3: e.target.value })}
+                  placeholder="9841307455"
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Fleet Support</span>
+                  <a
+                    href={`https://wa.me/91${(settings.adminAlertPhone3 || '').replace(/\D/g, '')}?text=MM%20Ride%20Admin%20Alert%20Test`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: '0.7rem', color: '#25D366', textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    Test WhatsApp ➔
+                  </a>
+                </div>
               </div>
             </div>
           </div>
