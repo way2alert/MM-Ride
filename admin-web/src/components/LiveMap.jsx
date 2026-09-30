@@ -148,19 +148,30 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
         </div>
       `;
 
+      const onMarkerClick = () => {
+        map.invalidateSize();
+        map.setView([loc.latitude, loc.longitude], Math.max(map.getZoom(), 15), { animate: true });
+        setTimeout(() => {
+          map.invalidateSize();
+          map.panTo([loc.latitude, loc.longitude], { animate: true, duration: 0.3 });
+        }, 100);
+        if (onSelectDriver) {
+          onSelectDriver(driver);
+        }
+      };
+
       if (markersRef.current[driver.id]) {
         // Smoothly update existing marker position
         const marker = markersRef.current[driver.id];
         marker.setLatLng([loc.latitude, loc.longitude]);
         marker.setIcon(customIcon);
         marker.getPopup().setContent(popupContent);
+        marker.off('click').on('click', onMarkerClick);
       } else {
         // Create new marker
         const marker = L.marker([loc.latitude, loc.longitude], { icon: customIcon }).addTo(map);
         marker.bindPopup(popupContent);
-        if (onSelectDriver) {
-          marker.on('click', () => onSelectDriver(driver));
-        }
+        marker.on('click', onMarkerClick);
         markersRef.current[driver.id] = marker;
       }
     });
@@ -189,16 +200,23 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
 
   }, [drivers, hubs]);
 
-  // Handle selected driver fly-to
+  // Handle selected driver centering & fly-to
   useEffect(() => {
-    if (!selectedDriver || !mapInstanceRef.current) return;
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    map.invalidateSize();
+
+    if (!selectedDriver) return;
     const loc = selectedDriver.lastKnownLocation;
     if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-      const map = mapInstanceRef.current;
-      map.flyTo([loc.latitude, loc.longitude], 16, { animate: true, duration: 1.2 });
-      if (markersRef.current[selectedDriver.id]) {
-        markersRef.current[selectedDriver.id].openPopup();
-      }
+      map.setView([loc.latitude, loc.longitude], Math.max(map.getZoom(), 15), { animate: true });
+      setTimeout(() => {
+        map.invalidateSize();
+        map.panTo([loc.latitude, loc.longitude], { animate: true, duration: 0.3 });
+        if (markersRef.current[selectedDriver.id]) {
+          markersRef.current[selectedDriver.id].openPopup();
+        }
+      }, 100);
     }
   }, [selectedDriver]);
 
