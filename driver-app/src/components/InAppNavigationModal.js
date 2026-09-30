@@ -64,16 +64,16 @@ export default function InAppNavigationModal({
   const webViewRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Fallback coords for Chennai hub if undefined
-  const hubLat = hub?.latitude || 13.0827;
-  const hubLng = hub?.longitude || 80.2707;
-  const hubName = hub?.name || 'Central Operations Hub Chennai';
-  const hubAddress = hub?.address || 'Anna Salai, Mount Road, Chennai, Tamil Nadu 600002';
-  const managerPhone = hub?.managerContact || '+91 9876543210';
+  // Pickup target coordinates (Depot or Host Location)
+  const hubLat = hub?.pickupLatitude || hub?.latitude || 28.611529;
+  const hubLng = hub?.pickupLongitude || hub?.longitude || 77.081742;
+  const hubName = hub?.providerName || hub?.name || 'Sitapuri Operations Hub';
+  const hubAddress = hub?.pickupAddress || hub?.address || 'Gali Number 3, Sitapuri, New Delhi';
+  const managerPhone = hub?.providerPhone || hub?.managerContact || '+91 9876543210';
 
-  // Driver GPS coords (defaults to reasonable nearby Chennai coordinate if simulator/no GPS yet)
-  const driverLat = currentLocation?.latitude || 13.0600;
-  const driverLng = currentLocation?.longitude || 80.2400;
+  // Driver GPS coords (defaults to current real coordinates if available)
+  const driverLat = currentLocation?.latitude || 28.6116;
+  const driverLng = currentLocation?.longitude || 77.0818;
 
   const distanceKm = getHaversineDistanceKm(driverLat, driverLng, hubLat, hubLng);
   // Estimate ETA based on 25 km/h urban two-wheeler speed

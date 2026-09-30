@@ -39,6 +39,13 @@ export default function Bikes() {
     year: '2024',
     fuelType: 'PETROL',
     hubId: '',
+    providerType: 'DEPOT', // 'DEPOT' | 'HOST'
+    providerName: '',
+    providerPhone: '',
+    pickupAddress: '',
+    pickupLandmark: '',
+    pickupLatitude: '',
+    pickupLongitude: '',
     currentOdometer: '0',
     currentFuelCharge: '100',
     insuranceNumber: '',
@@ -68,6 +75,25 @@ export default function Bikes() {
     e.preventDefault();
     setLoading(true);
     try {
+      const selectedHub = hubs.find(h => h.id === newBike.hubId) || hubs[0] || null;
+      const effectiveHubId = newBike.hubId || selectedHub?.id || null;
+      const isHost = newBike.providerType === 'HOST';
+
+      const pickupAddress = isHost
+        ? (newBike.pickupAddress || selectedHub?.address || 'Host Specified Address')
+        : (selectedHub?.address || newBike.pickupAddress || 'Depot Address');
+
+      const providerName = isHost
+        ? (newBike.providerName || 'Bike Provider Host')
+        : (selectedHub?.name || 'Company Hub Depot');
+
+      const providerPhone = isHost
+        ? (newBike.providerPhone || '')
+        : (selectedHub?.managerContact || '+91 9876543210');
+
+      const pickupLatitude = Number(newBike.pickupLatitude) || selectedHub?.latitude || 28.611529;
+      const pickupLongitude = Number(newBike.pickupLongitude) || selectedHub?.longitude || 77.081742;
+
       const bikeId = `bike_${newBike.registrationNumber.replace(/\s+/g, '-').toLowerCase()}`;
       await setDoc(doc(db, 'bikes', bikeId), {
         id: bikeId,
@@ -76,7 +102,15 @@ export default function Bikes() {
         model: newBike.model,
         year: Number(newBike.year),
         fuelType: newBike.fuelType,
-        hubId: newBike.hubId || (hubs[0]?.id || null),
+        hubId: effectiveHubId,
+        hubName: selectedHub?.name || 'Central Hub',
+        providerType: newBike.providerType,
+        providerName,
+        providerPhone,
+        pickupAddress,
+        pickupLandmark: newBike.pickupLandmark || '',
+        pickupLatitude,
+        pickupLongitude,
         status: 'AVAILABLE',
         currentOdometer: Number(newBike.currentOdometer) || 0,
         currentFuelCharge: Number(newBike.currentFuelCharge) || 100,
@@ -92,7 +126,7 @@ export default function Bikes() {
         action: 'BIKE_ADDED',
         relevantRecordId: bikeId,
         newValue: newBike.registrationNumber,
-        notes: `New bike added to fleet: ${newBike.registrationNumber}`
+        notes: `New bike added to fleet: ${newBike.registrationNumber} at ${pickupAddress}`
       });
 
       setAddModal(false);
@@ -103,6 +137,13 @@ export default function Bikes() {
         year: '2024',
         fuelType: 'PETROL',
         hubId: '',
+        providerType: 'DEPOT',
+        providerName: '',
+        providerPhone: '',
+        pickupAddress: '',
+        pickupLandmark: '',
+        pickupLatitude: '',
+        pickupLongitude: '',
         currentOdometer: '0',
         currentFuelCharge: '100',
         insuranceNumber: '',
@@ -125,6 +166,13 @@ export default function Bikes() {
       const selectedDriver = drivers.find(d => d.id === driverId);
       if (!selectedDriver) throw new Error("Selected driver not found.");
 
+      const selectedHub = hubs.find(h => h.id === bike.hubId);
+      const effectiveAddress = bike.pickupAddress || selectedHub?.address || 'Depot Address';
+      const effectiveLat = bike.pickupLatitude || selectedHub?.latitude || 28.611529;
+      const effectiveLng = bike.pickupLongitude || selectedHub?.longitude || 77.081742;
+      const effectiveProviderName = bike.providerName || selectedHub?.name || 'Fleet Hub';
+      const effectiveProviderPhone = bike.providerPhone || selectedHub?.managerContact || '';
+
       // Create bike assignment
       const assignRef = await addDoc(collection(db, 'bikeAssignments'), {
         bikeId: bike.id,
@@ -133,6 +181,7 @@ export default function Bikes() {
         driverName: selectedDriver.fullName,
         driverPhone: selectedDriver.mobileNumber,
         hubId: bike.hubId || null,
+        pickupAddress: effectiveAddress,
         status: 'HANDOVER_PENDING',
         assignedAt: new Date().toISOString(),
         createdAt: serverTimestamp()
@@ -146,11 +195,17 @@ export default function Bikes() {
         currentAssignmentId: assignRef.id
       });
 
-      // Update driver status
+      // Update driver status with complete pickup location & host contact details
       await updateDoc(doc(db, 'drivers', selectedDriver.id), {
         accountStatus: 'BIKE_ASSIGNED',
         assignedBikeId: bike.id,
         assignedBikeRegistration: bike.registrationNumber,
+        assignedHubId: bike.hubId || null,
+        pickupAddress: effectiveAddress,
+        pickupLatitude: effectiveLat,
+        pickupLongitude: effectiveLng,
+        providerName: effectiveProviderName,
+        providerPhone: effectiveProviderPhone,
         currentAssignmentId: assignRef.id
       });
 
@@ -158,7 +213,7 @@ export default function Bikes() {
         driverId: selectedDriver.id,
         action: 'BIKE_ASSIGNED',
         relevantRecordId: bike.id,
-        notes: `Bike ${bike.registrationNumber} assigned to ${selectedDriver.fullName}`
+        notes: `Bike ${bike.registrationNumber} assigned to ${selectedDriver.fullName} (Pickup: ${effectiveAddress})`
       });
 
       setAssignModal({ isOpen: false, bike: null, driverId: '' });
@@ -222,7 +277,7 @@ export default function Bikes() {
                 <th>Registration #</th>
                 <th>Make & Model</th>
                 <th>Type</th>
-                <th>Stationed Hub</th>
+                <th>Stationed Hub & Pickup Location</th>
                 <th>Odometer</th>
                 <th>Fuel/Charge</th>
                 <th>Status</th>
@@ -241,7 +296,22 @@ export default function Bikes() {
                       {b.fuelType}
                     </span>
                   </td>
-                  <td>{hubsMap[b.hubId] || 'Main Depot'}</td>
+                  <td>
+                    <div>
+                      <b>{hubsMap[b.hubId] || b.hubName || 'Sitapuri Hub'}</b>
+                      {b.providerType === 'HOST' ? (
+                        <div style={{ marginTop: 3 }}>
+                          <span className="badge badge-warning" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>🏡 Host Provided</span>
+                          <div style={{ fontSize: '0.78rem', color: '#CBD5E1', marginTop: 2 }}>👤 {b.providerName} {b.providerPhone && `(${b.providerPhone})`}</div>
+                          <div style={{ fontSize: '0.74rem', color: '#94A3B8' }}>📍 {b.pickupAddress || 'Host Address'}</div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.74rem', color: '#94A3B8', marginTop: 2 }}>
+                          🏢 Depot Stock • {b.pickupAddress || 'Depot Address'}
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td>{b.currentOdometer || 0} km</td>
                   <td><b>{b.currentFuelCharge || 100}%</b></td>
                   <td>
@@ -417,17 +487,114 @@ export default function Bikes() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Assigned Hub</label>
+              <label className="form-label">Assigned Hub / Operation Zone</label>
               <select
                 className="form-select"
                 value={newBike.hubId}
-                onChange={(e) => setNewBike({ ...newBike, hubId: e.target.value })}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  const foundHub = hubs.find(h => h.id === selectedId);
+                  setNewBike({ 
+                    ...newBike, 
+                    hubId: selectedId,
+                    pickupAddress: newBike.providerType === 'DEPOT' ? (foundHub?.address || '') : newBike.pickupAddress
+                  });
+                }}
               >
                 <option value="">Select Pickup & Return Hub</option>
                 {hubs.map(h => (
-                  <option key={h.id} value={h.id}>{h.name}</option>
+                  <option key={h.id} value={h.id}>{h.name} ({h.address})</option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          {/* Vehicle Source & Pickup Location Section */}
+          <div style={{
+            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1rem'
+          }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#F59E0B', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              📍 Vehicle Source & Pickup Point
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div className="form-group">
+                <label className="form-label">Vehicle Provider Type</label>
+                <select
+                  className="form-select"
+                  value={newBike.providerType}
+                  onChange={(e) => {
+                    const pType = e.target.value;
+                    const curHub = hubs.find(h => h.id === newBike.hubId) || hubs[0];
+                    setNewBike({
+                      ...newBike,
+                      providerType: pType,
+                      pickupAddress: pType === 'DEPOT' ? (curHub?.address || '') : '',
+                      providerName: pType === 'DEPOT' ? (curHub?.name || 'Company Depot') : ''
+                    });
+                  }}
+                >
+                  <option value="DEPOT">🏢 Company Fleet (Pickup at Depot Hub)</option>
+                  <option value="HOST">🏡 Bike Host Partner (Pickup at Host Location)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  {newBike.providerType === 'HOST' ? 'Host / Owner Name' : 'Depot In-Charge Name'}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder={newBike.providerType === 'HOST' ? "e.g. Rajesh Kumar" : "Central Hub Incharge"}
+                  value={newBike.providerName}
+                  onChange={(e) => setNewBike({ ...newBike, providerName: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div className="form-group">
+                <label className="form-label">
+                  {newBike.providerType === 'HOST' ? 'Host Mobile Number (For Pickup Call)' : 'Depot Contact Phone'}
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. +91 9876543210"
+                  value={newBike.providerPhone}
+                  onChange={(e) => setNewBike({ ...newBike, providerPhone: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Pickup Landmark</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. Near Shiv Mandir, Gate #2"
+                  value={newBike.pickupLandmark}
+                  onChange={(e) => setNewBike({ ...newBike, pickupLandmark: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                {newBike.providerType === 'HOST' ? 'Exact Host Street Address (Driver will travel here)' : 'Depot Pickup Address'}
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Complete street address for navigation..."
+                value={newBike.pickupAddress}
+                onChange={(e) => setNewBike({ ...newBike, pickupAddress: e.target.value })}
+                required
+              />
             </div>
           </div>
 

@@ -72,8 +72,8 @@ export default function VerificationStatusScreen({ navigation }) {
   }, [activeBike, driverProfile, hubInfo]);
 
   const handleOpenMaps = () => {
-    const lat = hubInfo?.latitude || 13.0827;
-    const lng = hubInfo?.longitude || 80.2707;
+    const lat = activeBike?.pickupLatitude || driverProfile?.pickupLatitude || hubInfo?.latitude || 28.611529;
+    const lng = activeBike?.pickupLongitude || driverProfile?.pickupLongitude || hubInfo?.longitude || 77.081742;
     const navUrl = `google.navigation:q=${lat},${lng}&mode=d`;
     Linking.canOpenURL(navUrl)
       .then((supported) => {
@@ -183,28 +183,39 @@ export default function VerificationStatusScreen({ navigation }) {
               (Iss location par jakar gaadi lein aur journey shuru karein!)
             </Text>
 
-            {/* 1. Hub / Depot Location Card */}
+            {/* 1. Hub / Depot / Host Location Card */}
             <View style={styles.locationCard}>
               <View style={styles.locationHeaderRow}>
                 <View style={styles.locationIconBadge}>
-                  <Text style={{ fontSize: 20 }}>📍</Text>
+                  <Text style={{ fontSize: 20 }}>{activeBike?.providerType === 'HOST' ? '🏡' : '📍'}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.locationCardTitle}>VEHICLE COLLECTION DEPOT</Text>
+                  <Text style={styles.locationCardTitle}>
+                    {activeBike?.providerType === 'HOST' ? 'HOST PICKUP LOCATION' : 'VEHICLE COLLECTION DEPOT'}
+                  </Text>
                   <Text style={styles.hubNameText}>
-                    {hubInfo?.name || 'Central Operations Hub Chennai'}
+                    {activeBike?.providerName || driverProfile?.providerName || hubInfo?.name || 'Sitapuri Operations Hub'}
                   </Text>
                 </View>
               </View>
 
               <Text style={styles.hubAddressText}>
-                {hubInfo?.address || 'Anna Salai, Mount Road, Chennai, Tamil Nadu 600002'}
+                {activeBike?.pickupAddress || driverProfile?.pickupAddress || hubInfo?.address || 'Gali Number 3, Sitapuri, New Delhi'}
               </Text>
 
-              {hubInfo?.managerContact && (
-                <Text style={styles.hubContactText}>
-                  📞 Depot Contact: <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{hubInfo.managerContact}</Text>
-                </Text>
+              {(activeBike?.providerPhone || driverProfile?.providerPhone || hubInfo?.managerContact) && (
+                <TouchableOpacity
+                  style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center' }}
+                  onPress={() => {
+                    const phone = activeBike?.providerPhone || driverProfile?.providerPhone || hubInfo?.managerContact;
+                    if (phone) Linking.openURL(`tel:${phone}`);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.hubContactText}>
+                    📞 Contact: <Text style={{ color: '#10B981', fontWeight: 'bold' }}>{activeBike?.providerPhone || driverProfile?.providerPhone || hubInfo?.managerContact}</Text> (Tap to Call)
+                  </Text>
+                </TouchableOpacity>
               )}
 
               {/* Primary: In-App Live Navigation HUD */}

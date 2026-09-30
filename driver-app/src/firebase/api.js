@@ -665,6 +665,12 @@ export async function autoAssignAvailableBike(driverId, driverName) {
       }
     }
 
+    const effectivePickupAddress = bikeData.pickupAddress || hubData?.address || 'Sitapuri Hub Depot, New Delhi';
+    const effectiveLat = bikeData.pickupLatitude || hubData?.latitude || 28.611529;
+    const effectiveLng = bikeData.pickupLongitude || hubData?.longitude || 77.081742;
+    const effectiveProviderName = bikeData.providerName || hubData?.name || 'Sitapuri Fleet Hub';
+    const effectiveProviderPhone = bikeData.providerPhone || hubData?.managerContact || '+91 9876543210';
+
     // 1. Assign bike to driver
     await updateDoc(doc(db, 'bikes', bikeDoc.id), {
       status: 'ASSIGNED',
@@ -673,12 +679,17 @@ export async function autoAssignAvailableBike(driverId, driverName) {
       assignedAt: new Date().toISOString()
     });
 
-    // 2. Update driver profile
+    // 2. Update driver profile with pickup location and host details
     await updateDoc(doc(db, 'drivers', driverId), {
       assignedBikeId: bikeDoc.id,
       assignedBikeRegistration: bikeData.registrationNumber,
       accountStatus: 'BIKE_ASSIGNED',
       assignedHubId: bikeData.hubId || null,
+      pickupAddress: effectivePickupAddress,
+      pickupLatitude: effectiveLat,
+      pickupLongitude: effectiveLng,
+      providerName: effectiveProviderName,
+      providerPhone: effectiveProviderPhone,
       assignedAt: new Date().toISOString()
     });
 
@@ -689,6 +700,7 @@ export async function autoAssignAvailableBike(driverId, driverName) {
         driverId,
         driverName: driverName || 'Driver',
         hubId: bikeData.hubId || null,
+        pickupAddress: effectivePickupAddress,
         assignedAt: new Date().toISOString(),
         type: 'AUTO_ALLOCATED'
       });
@@ -698,8 +710,22 @@ export async function autoAssignAvailableBike(driverId, driverName) {
 
     return {
       success: true,
-      bike: bikeData,
-      hub: hubData
+      bike: {
+        ...bikeData,
+        pickupAddress: effectivePickupAddress,
+        pickupLatitude: effectiveLat,
+        pickupLongitude: effectiveLng,
+        providerName: effectiveProviderName,
+        providerPhone: effectiveProviderPhone
+      },
+      hub: hubData || {
+        id: bikeData.hubId || 'hub_sitapuri',
+        name: effectiveProviderName,
+        address: effectivePickupAddress,
+        latitude: effectiveLat,
+        longitude: effectiveLng,
+        managerContact: effectiveProviderPhone
+      }
     };
   } catch (err) {
     console.error('autoAssignAvailableBike error:', err);
@@ -708,7 +734,7 @@ export async function autoAssignAvailableBike(driverId, driverName) {
 }
 
 /**
- * Fetch hub details by hubId with guaranteed fallback
+ * Fetch hub details by hubId with guaranteed fallback to real Firestore hubs
  */
 export async function getHubDetails(hubId) {
   try {
@@ -718,7 +744,7 @@ export async function getHubDetails(hubId) {
         return { id: snap.id, ...snap.data() };
       }
     }
-    // Fallback to first available hub in collection
+    // Fetch first available real hub in collection
     const hubsRef = collection(db, 'hubs');
     const q = query(hubsRef, limit(1));
     const snap = await getDocs(q);
@@ -730,11 +756,11 @@ export async function getHubDetails(hubId) {
     console.warn('getHubDetails error:', e);
   }
   return {
-    id: 'hub_central_chennai',
-    name: 'Central Operations Hub Chennai',
-    address: 'Anna Salai, Mount Road, Chennai, Tamil Nadu 600002',
-    latitude: 13.0827,
-    longitude: 80.2707,
+    id: 'hub_sitapuri',
+    name: 'Sitapuri Operations Hub',
+    address: 'Gali Number 3, Sitapuri, New Delhi 110059',
+    latitude: 28.611529,
+    longitude: 77.081742,
     managerContact: '+91 9876543210',
     radiusMeters: 400
   };
