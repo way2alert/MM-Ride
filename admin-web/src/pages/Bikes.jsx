@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Bike, 
-  Plus, 
-  UserCheck, 
-  UserX, 
-  Wrench, 
-  AlertTriangle, 
-  Eye, 
-  BatteryCharging, 
+import {
+  Bike,
+  Plus,
+  UserCheck,
+  UserX,
+  Wrench,
+  AlertTriangle,
+  Eye,
+  BatteryCharging,
   Fuel,
   CheckCircle2,
   ShieldCheck,
@@ -66,7 +66,7 @@ export default function Bikes() {
     };
   }, []);
 
-  const eligibleDrivers = drivers.filter(d => 
+  const eligibleDrivers = drivers.filter(d =>
     (d.approvalStatus === 'APPROVED' || d.accountStatus === 'APPROVED_BIKE_NOT_ASSIGNED') &&
     !d.assignedBikeId
   );
@@ -315,11 +315,10 @@ export default function Bikes() {
                   <td>{b.currentOdometer || 0} km</td>
                   <td><b>{b.currentFuelCharge || 100}%</b></td>
                   <td>
-                    <span className={`badge ${
-                      b.status === 'AVAILABLE' ? 'badge-success' :
-                      b.status === 'ACTIVE' ? 'badge-info' :
-                      b.status === 'MAINTENANCE' || b.status === 'ACCIDENT' ? 'badge-danger' : 'badge-warning'
-                    }`}>
+                    <span className={`badge ${b.status === 'AVAILABLE' ? 'badge-success' :
+                        b.status === 'ACTIVE' ? 'badge-info' :
+                          b.status === 'MAINTENANCE' || b.status === 'ACCIDENT' ? 'badge-danger' : 'badge-warning'
+                      }`}>
                       {BIKE_STATUSES[b.status] || b.status}
                     </span>
                   </td>
@@ -487,114 +486,17 @@ export default function Bikes() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Assigned Hub / Operation Zone</label>
+              <label className="form-label">Assigned Hub</label>
               <select
                 className="form-select"
                 value={newBike.hubId}
-                onChange={(e) => {
-                  const selectedId = e.target.value;
-                  const foundHub = hubs.find(h => h.id === selectedId);
-                  setNewBike({ 
-                    ...newBike, 
-                    hubId: selectedId,
-                    pickupAddress: newBike.providerType === 'DEPOT' ? (foundHub?.address || '') : newBike.pickupAddress
-                  });
-                }}
+                onChange={(e) => setNewBike({ ...newBike, hubId: e.target.value })}
               >
                 <option value="">Select Pickup & Return Hub</option>
                 {hubs.map(h => (
-                  <option key={h.id} value={h.id}>{h.name} ({h.address})</option>
+                  <option key={h.id} value={h.id}>{h.name}</option>
                 ))}
               </select>
-            </div>
-          </div>
-
-          {/* Vehicle Source & Pickup Location Section */}
-          <div style={{
-            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '8px',
-            padding: '1rem',
-            marginBottom: '1rem'
-          }}>
-            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#F59E0B', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              📍 Vehicle Source & Pickup Point
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
-              <div className="form-group">
-                <label className="form-label">Vehicle Provider Type</label>
-                <select
-                  className="form-select"
-                  value={newBike.providerType}
-                  onChange={(e) => {
-                    const pType = e.target.value;
-                    const curHub = hubs.find(h => h.id === newBike.hubId) || hubs[0];
-                    setNewBike({
-                      ...newBike,
-                      providerType: pType,
-                      pickupAddress: pType === 'DEPOT' ? (curHub?.address || '') : '',
-                      providerName: pType === 'DEPOT' ? (curHub?.name || 'Company Depot') : ''
-                    });
-                  }}
-                >
-                  <option value="DEPOT">🏢 Company Fleet (Pickup at Depot Hub)</option>
-                  <option value="HOST">🏡 Bike Host Partner (Pickup at Host Location)</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">
-                  {newBike.providerType === 'HOST' ? 'Host / Owner Name' : 'Depot In-Charge Name'}
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder={newBike.providerType === 'HOST' ? "e.g. Rajesh Kumar" : "Central Hub Incharge"}
-                  value={newBike.providerName}
-                  onChange={(e) => setNewBike({ ...newBike, providerName: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
-              <div className="form-group">
-                <label className="form-label">
-                  {newBike.providerType === 'HOST' ? 'Host Mobile Number (For Pickup Call)' : 'Depot Contact Phone'}
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. +91 9876543210"
-                  value={newBike.providerPhone}
-                  onChange={(e) => setNewBike({ ...newBike, providerPhone: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Pickup Landmark</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. Near Shiv Mandir, Gate #2"
-                  value={newBike.pickupLandmark}
-                  onChange={(e) => setNewBike({ ...newBike, pickupLandmark: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                {newBike.providerType === 'HOST' ? 'Exact Host Street Address (Driver will travel here)' : 'Depot Pickup Address'}
-              </label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Complete street address for navigation..."
-                value={newBike.pickupAddress}
-                onChange={(e) => setNewBike({ ...newBike, pickupAddress: e.target.value })}
-                required
-              />
             </div>
           </div>
 

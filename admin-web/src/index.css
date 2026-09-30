@@ -588,29 +588,165 @@ h1, h2, h3, h4, h5, h6 {
   background: #0f172a !important;
 }
 
-/* Custom Pulsing Leaflet Marker */
-.driver-marker-pulse {
-  position: relative;
+/* Custom Pulsing Leaflet Marker with Floating Driver Name */
+.driver-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
 }
-.driver-marker-inner {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #F59E0B;
-  color: #000;
-  font-weight: 700;
+
+.driver-marker-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.driver-marker-container:hover {
+  transform: scale(1.12);
+  z-index: 9999 !important;
+}
+
+/* Floating Driver Name Pill on Top of Bike */
+.driver-name-pill {
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  color: #FFFFFF;
+  padding: 3px 9px;
+  border-radius: 20px;
   font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 3px;
+  max-width: 180px;
+}
+
+.driver-name-pill.pill-moving {
+  border-color: #10B981;
+  background: rgba(6, 78, 59, 0.94);
+}
+
+.driver-name-pill.pill-overspeed {
+  border-color: #EF4444;
+  background: rgba(127, 29, 29, 0.96);
+  animation: overspeed-flash 0.8s infinite alternate;
+}
+
+.driver-name-pill.pill-idle {
+  border-color: #F59E0B;
+  background: rgba(30, 41, 59, 0.94);
+}
+
+.status-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.pill-moving .status-pulse-dot {
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+}
+
+.pill-overspeed .status-pulse-dot {
+  background: #EF4444;
+  box-shadow: 0 0 8px #EF4444;
+}
+
+.pill-idle .status-pulse-dot {
+  background: #F59E0B;
+  box-shadow: 0 0 6px #F59E0B;
+}
+
+.driver-pill-name {
+  color: #F8FAFC;
+  font-weight: 800;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 95px;
+}
+
+.driver-pill-speed {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: #FFF;
+  letter-spacing: 0.2px;
+}
+
+.bike-avatar-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2.5px solid #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #FFF;
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.8);
+  font-size: 18px;
+  color: #FFF;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
 }
-.driver-marker-inner.overspeed {
+
+.bike-avatar-circle.bike-moving {
+  background: #10B981;
+  animation: moving-pulse 2s infinite;
+}
+
+.bike-avatar-circle.bike-overspeed {
   background: #EF4444;
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.9);
+  animation: overspeed-flash 0.8s infinite alternate;
 }
-.driver-marker-inner.idle {
-  background: #64748B;
-  box-shadow: 0 0 10px rgba(100, 116, 139, 0.7);
+
+.bike-avatar-circle.bike-idle {
+  background: #F59E0B;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.65);
+}
+
+.bike-marker-pointer {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #FFFFFF;
+  margin-top: -1px;
+}
+
+@keyframes moving-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.8);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes overspeed-flash {
+  from {
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+  }
+  to {
+    box-shadow: 0 0 22px rgba(239, 68, 68, 1);
+  }
 }

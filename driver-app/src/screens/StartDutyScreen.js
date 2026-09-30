@@ -141,7 +141,7 @@ export default function StartDutyScreen({ navigation }) {
         pickupGps: currentLocation ? {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude
-        } : { latitude: 13.0827, longitude: 80.2707 },
+        } : { latitude: selectedHub?.latitude || 28.6115, longitude: selectedHub?.longitude || 77.0817 },
         pickupOdometer: enteredOdo,
         pickupFuelCharge: Number(fuelCharge) || 100,
         bikeCondition: condition,

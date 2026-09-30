@@ -304,8 +304,8 @@ export async function requestStartDuty({
     timestamp: nowIso,
     updatedAt: nowIso
   } : {
-    latitude: 13.0827,
-    longitude: 80.2707,
+    latitude: 28.6115,
+    longitude: 77.0817,
     speed: 0,
     timestamp: nowIso,
     updatedAt: nowIso

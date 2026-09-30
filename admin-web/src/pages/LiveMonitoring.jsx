@@ -22,14 +22,16 @@ import { db } from '../firebase/config';
 
 export default function LiveMonitoring({ onSelectDriver }) {
   const [drivers, setDrivers] = useState([]);
+  const [driverDevices, setDriverDevices] = useState([]);
   const [hubs, setHubs] = useState([]);
   const [dutySessions, setDutySessions] = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(null);
-  const [filterMode, setFilterMode] = useState('ALL'); // ALL, MOVING, IDLE, OVERSPEED
+  const [filterMode, setFilterMode] = useState('ALL'); // ALL, DUTY, MOVING, IDLE, OVERSPEED
   const [speedThreshold, setSpeedThreshold] = useState(60);
 
   useEffect(() => {
     const unsubDrivers = subscribeToCollection('drivers', setDrivers);
+    const unsubDevices = subscribeToCollection('driverDevices', setDriverDevices);
     const unsubHubs = subscribeToCollection('hubs', setHubs);
     const unsubDuty = subscribeToCollection('dutySessions', setDutySessions);
     const unsubSettings = onSnapshot(doc(db, 'settings', 'system'), (snap) => {
@@ -40,20 +42,76 @@ export default function LiveMonitoring({ onSelectDriver }) {
 
     return () => {
       unsubDrivers();
+      unsubDevices();
       unsubHubs();
       unsubDuty();
       unsubSettings();
     };
   }, []);
 
-  // Drivers with live GPS coordinates or actively on duty
-  const driversWithGps = drivers.filter(d => 
-    (d.lastKnownLocation && d.lastKnownLocation.latitude && d.lastKnownLocation.longitude) ||
-    d.isCurrentlyOnDuty ||
-    d.currentDutyId
+  // Primary active hub coordinates (Delhi NCR / Sitapuri default)
+  const primaryHub = hubs.length > 0 && typeof hubs[0].latitude === 'number' ? hubs[0] : null;
+  const hubLat = primaryHub ? primaryHub.latitude : 28.6115;
+  const hubLng = primaryHub ? primaryHub.longitude : 77.0817;
+
+  // Merge live hardware GPS from driverDevices into drivers
+  const mergedDrivers = drivers.map(driver => {
+    const dev = driverDevices.find(d => 
+      (d.assignedDriverId && d.assignedDriverId === driver.id) ||
+      (d.driverId && d.driverId === driver.id) ||
+      (driver.boundDeviceId && (d.id === driver.boundDeviceId || d.deviceId === driver.boundDeviceId)) ||
+      (driver.mobileNumber && d.assignedDriverPhone && d.assignedDriverPhone.replace(/\D/g, '').endsWith(driver.mobileNumber.replace(/\D/g, '').slice(-10)))
+    );
+
+    let effectiveLocation = driver.lastKnownLocation || null;
+
+    if (dev?.lastGps?.latitude && dev?.lastGps?.longitude) {
+      const devTime = dev.lastGps.timestamp ? new Date(dev.lastGps.timestamp).getTime() : 0;
+      const drvTime = driver.lastKnownLocation?.timestamp ? new Date(driver.lastKnownLocation.timestamp).getTime() : 0;
+      if (!effectiveLocation || devTime >= drvTime) {
+        effectiveLocation = {
+          latitude: dev.lastGps.latitude,
+          longitude: dev.lastGps.longitude,
+          speed: dev.lastGps.speed !== undefined ? dev.lastGps.speed : (effectiveLocation?.speed || 0),
+          timestamp: dev.lastGps.timestamp || dev.lastSync || new Date().toISOString()
+        };
+      }
+    }
+
+    return {
+      ...driver,
+      lastKnownLocation: effectiveLocation,
+      deviceTelemetry: dev ? {
+        batteryLevel: dev.batteryLevel,
+        isCharging: dev.isCharging,
+        networkType: dev.networkType,
+        model: dev.model,
+        status: dev.status,
+        lastSync: dev.lastSync
+      } : null
+    };
+  });
+
+  // Approved drivers filter (Must be approved / active; not suspended)
+  const approvedDrivers = mergedDrivers.filter(d => {
+    const isApproved = d.approvalStatus === 'APPROVED' || 
+                       d.accountStatus === 'APPROVED' || 
+                       d.accountStatus === 'BIKE_ASSIGNED' || 
+                       d.accountStatus === 'ACTIVE_DRIVER' || 
+                       d.status === 'APPROVED' || 
+                       d.status === 'ACTIVE';
+    const isSuspended = d.isSuspended || d.status === 'SUSPENDED' || d.accountStatus === 'SUSPENDED';
+    return isApproved && !isSuspended;
+  });
+
+  // Approved drivers with active GPS coordinates
+  const driversWithGps = approvedDrivers.filter(d => 
+    d.lastKnownLocation && 
+    typeof d.lastKnownLocation.latitude === 'number' && 
+    typeof d.lastKnownLocation.longitude === 'number'
   );
 
-  const onDutyCount = drivers.filter(d => d.isCurrentlyOnDuty || d.currentDutyId).length;
+  const onDutyCount = approvedDrivers.filter(d => d.isCurrentlyOnDuty || d.currentDutyId).length;
 
   const filteredMapDrivers = driversWithGps.filter(d => {
     const loc = d.lastKnownLocation;
@@ -65,8 +123,6 @@ export default function LiveMonitoring({ onSelectDriver }) {
     if (filterMode === 'OFF_DUTY_MOVING') return (!d.isCurrentlyOnDuty && !d.currentDutyId) && (speed > 5);
     if (filterMode === 'OFFLINE_CASH') return (d.lastPlatformRideEvent?.eventType === 'RIDE_CANCELLED') && (speed > 5);
     if (filterMode === 'BORDER_BREACH') {
-      const hubLat = 13.0827;
-      const hubLng = 80.2707;
       const lat = loc?.latitude || hubLat;
       const lng = loc?.longitude || hubLng;
       const distKm = Math.sqrt(Math.pow((lat - hubLat) * 111, 2) + Math.pow((lng - hubLng) * 111, 2));
@@ -217,10 +273,8 @@ export default function LiveMonitoring({ onSelectDriver }) {
       }
     }
 
-    // Combination B: Out of Metro Zone / Geofence breach (> 40km from Chennai Central)
+    // Combination B: Out of Metro Zone / Geofence breach (> 40km from Depot Hub)
     if (loc?.latitude && loc?.longitude) {
-      const hubLat = 13.0827;
-      const hubLng = 80.2707;
       const dLat = (loc.latitude - hubLat) * 111;
       const dLng = (loc.longitude - hubLng) * 111;
       const distKm = Math.sqrt(dLat * dLat + dLng * dLng);
@@ -529,6 +583,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
           <LiveMap
             drivers={filteredMapDrivers}
             hubs={hubs}
+            selectedDriver={selectedDriver}
             onSelectDriver={(d) => setSelectedDriver(d)}
           />
         </div>
@@ -600,7 +655,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                     <span style={{ color: '#94A3B8' }}>Hub Perimeter:</span>
                     {(() => {
-                      const hLat = 13.0827, hLng = 80.2707;
+                      const hLat = hubLat, hLng = hubLng;
                       const dKm = Math.round(Math.sqrt(
                         Math.pow((selectedDriver.lastKnownLocation.latitude - hLat) * 111, 2) + 
                         Math.pow((selectedDriver.lastKnownLocation.longitude - hLng) * 111, 2)

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, onSnapshot, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
@@ -29,6 +29,7 @@ export function DriverProvider({ children }) {
   const [todayDutyMinutes, setTodayDutyMinutes] = useState(0);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
+  const lastDriverSyncRef = useRef(0);
 
   // MDM Dedicated Device & Kiosk State
   const [restrictionState, setRestrictionState] = useState(null);
@@ -190,6 +191,24 @@ export function DriverProvider({ children }) {
             setCurrentLocation(coords);
             setCurrentSpeed(speedKmh);
             updateMdmTelemetryLocation(coords, speedKmh);
+
+            // Real-time live GPS telemetry sync to driver document (throttled to every 4s)
+            if (driverProfile?.id && coords?.latitude && coords?.longitude) {
+              const now = Date.now();
+              if (now - lastDriverSyncRef.current >= 4000) {
+                lastDriverSyncRef.current = now;
+                updateDoc(doc(db, 'drivers', driverProfile.id), {
+                  lastKnownLocation: {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    speed: speedKmh,
+                    accuracy: coords.accuracy || null,
+                    timestamp: new Date().toISOString()
+                  },
+                  lastActiveAt: new Date().toISOString()
+                }).catch(() => {});
+              }
+            }
 
             // Log breadcrumb to Firestore every 30 seconds if on active duty
             if (driverProfile?.id && activeDutySession?.id && activeDutySession.status === 'ACTIVE') {

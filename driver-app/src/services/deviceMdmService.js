@@ -242,20 +242,31 @@ export async function startMdmDeviceTelemetry({
 
       await updateDoc(deviceRef, updatePayload);
 
-      // Also sync to driver's document for unified queries
-      if (driverProfile?.id) {
-        await updateDoc(doc(db, 'drivers', driverProfile.id), {
+      // Also sync to driver's document for unified live queries
+      const targetDriverId = driverProfile?.id || effectiveDriverId;
+      if (targetDriverId) {
+        const driverSyncPayload = {
           boundDeviceId: deviceId,
           lastDeviceSync: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
           deviceBattery: metrics.batteryLevel,
           deviceIsCharging: metrics.isCharging,
           deviceNetwork: metrics.networkType
-        }).catch(() => {});
+        };
+        if (activeLoc?.latitude && activeLoc?.longitude) {
+          driverSyncPayload.lastKnownLocation = {
+            latitude: activeLoc.latitude,
+            longitude: activeLoc.longitude,
+            speed: activeSpeed,
+            timestamp: new Date().toISOString()
+          };
+        }
+        await updateDoc(doc(db, 'drivers', targetDriverId), driverSyncPayload).catch(() => {});
       }
     } catch (e) {
       // Background heartbeat fail-safe
     }
-  }, 20000);
+  }, 10000);
 
   return () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);

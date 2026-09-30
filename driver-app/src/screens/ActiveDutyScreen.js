@@ -76,8 +76,8 @@ export default function ActiveDutyScreen({ navigation }) {
   useEffect(() => {
     if (!driverProfile?.id || !activeDutySession?.id) return;
 
-    const baseLat = currentLocation?.latitude || 13.0827;
-    const baseLng = currentLocation?.longitude || 80.2707;
+    const baseLat = currentLocation?.latitude || 28.6115;
+    const baseLng = currentLocation?.longitude || 77.0817;
 
     const timer = setInterval(async () => {
       let lat = baseLat;
@@ -87,8 +87,8 @@ export default function ActiveDutyScreen({ navigation }) {
       if (isSimulatingMovement) {
         setSimStep(prev => prev + 1);
         const offset = (simStep % 50) * 0.0005;
-        lat = 13.0827 + offset;
-        lng = 80.2707 + (offset * 0.7);
+        lat = baseLat + offset;
+        lng = baseLng + (offset * 0.7);
         speed = 28 + Math.floor(Math.abs(Math.sin(simStep)) * 8);
       }
 
@@ -175,8 +175,8 @@ export default function ActiveDutyScreen({ navigation }) {
   }, [driverProfile?.id]);
 
   // Operational Geofence Perimeter Calculation (45 km radius from Central Hub)
-  const baseHubLat = 13.0827;
-  const baseHubLng = 80.2707;
+  const baseHubLat = 28.6115;
+  const baseHubLng = 77.0817;
   const curLat = currentLocation?.latitude || baseHubLat;
   const curLng = currentLocation?.longitude || baseHubLng;
   const distFromHubKm = Math.round(
@@ -559,7 +559,7 @@ export default function ActiveDutyScreen({ navigation }) {
         driverId: driverProfile?.id,
         dutyId: activeDutySession?.id,
         bikeId: driverProfile?.assignedBikeId || assignedBike?.id,
-        currentLocation: currentLocation || { latitude: 13.0827, longitude: 80.2707, speed: 0 },
+        currentLocation: currentLocation || { latitude: 28.6115, longitude: 77.0817, speed: 0 },
         isSimulated: true
       });
 
