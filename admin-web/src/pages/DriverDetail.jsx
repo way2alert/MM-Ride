@@ -239,35 +239,37 @@ export default function DriverDetail({ driver, onBack }) {
           <div className="panel-header">
             <div className="panel-title">Duty History</div>
           </div>
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Duty ID</th>
-                <th>Status</th>
-                <th>Start Time</th>
-                <th>End Time</th>
-                <th>Distance</th>
-                <th>Pickup Odo</th>
-                <th>Return Odo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {duties.map(dt => (
-                <tr key={dt.id}>
-                  <td><code>{dt.id}</code></td>
-                  <td><span className={`badge ${dt.status === 'COMPLETED' ? 'badge-success' : 'badge-warning'}`}>{dt.status}</span></td>
-                  <td>{formatDateTime(dt.startTime)}</td>
-                  <td>{formatDateTime(dt.endTime)}</td>
-                  <td><b>{dt.totalDistanceKm ? `${dt.totalDistanceKm} km` : '—'}</b></td>
-                  <td>{dt.pickupOdometer} km</td>
-                  <td>{dt.returnOdometer ? `${dt.returnOdometer} km` : '—'}</td>
+          <div className="table-responsive">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Duty ID</th>
+                  <th>Status</th>
+                  <th>Start Time</th>
+                  <th>End Time</th>
+                  <th>Distance</th>
+                  <th>Pickup Odo</th>
+                  <th>Return Odo</th>
                 </tr>
-              ))}
-              {duties.length === 0 && (
-                <tr><td colSpan="7" style={{ textAlign: 'center', color: '#64748B' }}>No duty shifts recorded.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {duties.map(dt => (
+                  <tr key={dt.id}>
+                    <td><code>{dt.id}</code></td>
+                    <td><span className={`badge ${dt.status === 'COMPLETED' ? 'badge-success' : 'badge-warning'}`}>{dt.status}</span></td>
+                    <td>{formatDateTime(dt.startTime)}</td>
+                    <td>{formatDateTime(dt.endTime)}</td>
+                    <td><b>{dt.totalDistanceKm ? `${dt.totalDistanceKm} km` : '—'}</b></td>
+                    <td>{dt.pickupOdometer} km</td>
+                    <td>{dt.returnOdometer ? `${dt.returnOdometer} km` : '—'}</td>
+                  </tr>
+                ))}
+                {duties.length === 0 && (
+                  <tr><td colSpan="7" style={{ textAlign: 'center', color: '#64748B' }}>No duty shifts recorded.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -277,37 +279,39 @@ export default function DriverDetail({ driver, onBack }) {
           <div className="panel-header">
             <div className="panel-title">Financial Settlements Ledger</div>
           </div>
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Settlement ID</th>
-                <th>Date</th>
-                <th>Gross</th>
-                <th>Net</th>
-                <th>Worker 50%</th>
-                <th>10% Hold</th>
-                <th>Payable Today</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {settlements.map(s => (
-                <tr key={s.id}>
-                  <td><code>{s.settlementId || s.id}</code></td>
-                  <td>{s.date}</td>
-                  <td>{formatCurrency(s.grossIncome)}</td>
-                  <td>{formatCurrency(s.netIncome)}</td>
-                  <td><b>{formatCurrency(s.workerShare)}</b></td>
-                  <td>{formatCurrency(s.reserveHold)}</td>
-                  <td style={{ color: '#10B981', fontWeight: 700 }}>{formatCurrency(s.payableToday)}</td>
-                  <td><span className={`badge ${s.status === 'PAID' ? 'badge-success' : 'badge-warning'}`}>{s.status}</span></td>
+          <div className="table-responsive">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Settlement ID</th>
+                  <th>Date</th>
+                  <th>Gross</th>
+                  <th>Net</th>
+                  <th>Worker 50%</th>
+                  <th>10% Hold</th>
+                  <th>Payable Today</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-              {settlements.length === 0 && (
-                <tr><td colSpan="8" style={{ textAlign: 'center', color: '#64748B' }}>No settlements generated yet.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {settlements.map(s => (
+                  <tr key={s.id}>
+                    <td><code>{s.settlementId || s.id}</code></td>
+                    <td>{s.date}</td>
+                    <td>{formatCurrency(s.grossIncome)}</td>
+                    <td>{formatCurrency(s.netIncome)}</td>
+                    <td><b>{formatCurrency(s.workerShare)}</b></td>
+                    <td>{formatCurrency(s.reserveHold)}</td>
+                    <td style={{ color: '#10B981', fontWeight: 700 }}>{formatCurrency(s.payableToday)}</td>
+                    <td><span className={`badge ${s.status === 'PAID' ? 'badge-success' : 'badge-warning'}`}>{s.status}</span></td>
+                  </tr>
+                ))}
+                {settlements.length === 0 && (
+                  <tr><td colSpan="8" style={{ textAlign: 'center', color: '#64748B' }}>No settlements generated yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -317,29 +321,31 @@ export default function DriverDetail({ driver, onBack }) {
           <div className="panel-header">
             <div className="panel-title">Accidents & Emergency Incidents</div>
           </div>
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {incidents.map(inc => (
-                <tr key={inc.id}>
-                  <td>{formatDateTime(inc.timestamp)}</td>
-                  <td><b>{inc.type}</b></td>
-                  <td>{inc.description}</td>
-                  <td><span className="badge badge-warning">{inc.status || 'REPORTED'}</span></td>
+          <div className="table-responsive">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-              {incidents.length === 0 && (
-                <tr><td colSpan="4" style={{ textAlign: 'center', color: '#64748B' }}>No incidents on record.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {incidents.map(inc => (
+                  <tr key={inc.id}>
+                    <td>{formatDateTime(inc.timestamp)}</td>
+                    <td><b>{inc.type}</b></td>
+                    <td>{inc.description}</td>
+                    <td><span className="badge badge-warning">{inc.status || 'REPORTED'}</span></td>
+                  </tr>
+                ))}
+                {incidents.length === 0 && (
+                  <tr><td colSpan="4" style={{ textAlign: 'center', color: '#64748B' }}>No incidents on record.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -347,33 +353,77 @@ export default function DriverDetail({ driver, onBack }) {
       {activeTab === 'audit' && (
         <div className="panel">
           <div className="panel-header">
-            <div className="panel-title">Immutable Audit Trail</div>
+            <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <ScrollText size={18} color="#F59E0B" />
+              <span>Immutable Audit Trail ({auditLogs.length} Records)</span>
+            </div>
+            <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>
+              🛡️ Append-Only Tamper Proof
+            </span>
           </div>
-          <table className="custom-table">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Action</th>
-                <th>Actor</th>
-                <th>Source</th>
-                <th>Notes / Diff</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditLogs.map(log => (
-                <tr key={log.id}>
-                  <td>{formatDateTime(log.timestamp)}</td>
-                  <td><b>{log.action}</b></td>
-                  <td>{log.actor}</td>
-                  <td><span className="badge badge-neutral">{log.source}</span></td>
-                  <td>{log.notes || log.newValue || '—'}</td>
+
+          <div className="table-responsive" style={{ width: '100%' }}>
+            <table className="custom-table" style={{ width: '100%', tableLayout: 'auto' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '14%', whiteSpace: 'nowrap' }}>Timestamp</th>
+                  <th style={{ width: '20%' }}>Action</th>
+                  <th style={{ width: '18%' }}>Actor</th>
+                  <th style={{ width: '12%' }}>Source</th>
+                  <th style={{ width: '36%' }}>Notes / Diff</th>
                 </tr>
-              ))}
-              {auditLogs.length === 0 && (
-                <tr><td colSpan="5" style={{ textAlign: 'center', color: '#64748B' }}>No audit records found.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {auditLogs.map(log => (
+                  <tr key={log.id}>
+                    <td style={{ whiteSpace: 'nowrap', color: '#94A3B8', fontSize: '0.78rem' }}>
+                      <div style={{ fontWeight: 600, color: '#E2E8F0' }}>
+                        {new Date(log.timestamp || log.serverTimestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                      <div style={{ color: '#64748B', fontSize: '0.72rem' }}>
+                        {new Date(log.timestamp || log.serverTimestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge badge-info" style={{ fontWeight: 700, fontSize: '0.72rem', whiteSpace: 'normal', lineHeight: 1.3, display: 'inline-block' }}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.8rem', color: '#E2E8F0', wordBreak: 'break-all' }}>
+                      {log.actor || 'SYSTEM'}
+                    </td>
+                    <td>
+                      <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                        {log.source || 'ADMIN_WEB'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.82rem', color: '#CBD5E1', lineHeight: 1.45, wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                      {log.notes ? (
+                        <span>{log.notes}</span>
+                      ) : (log.previousValue !== undefined && log.previousValue !== null && log.newValue !== undefined && log.newValue !== null) ? (
+                        <span>
+                          <span style={{ color: '#EF4444', fontWeight: 600 }}>{String(log.previousValue)}</span>
+                          <span style={{ margin: '0 6px', color: '#94A3B8' }}>➔</span>
+                          <span style={{ color: '#10B981', fontWeight: 600 }}>{String(log.newValue)}</span>
+                        </span>
+                      ) : log.newValue ? (
+                        typeof log.newValue === 'object' ? JSON.stringify(log.newValue) : String(log.newValue)
+                      ) : (
+                        <span style={{ color: '#64748B' }}>—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {auditLogs.length === 0 && (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', color: '#64748B', padding: '2rem' }}>
+                      No audit records found for this driver.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
