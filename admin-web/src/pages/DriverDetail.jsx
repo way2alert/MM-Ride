@@ -18,7 +18,7 @@ import {
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { formatCurrency, formatDateTime } from '../utils/formatters';
-import { DRIVER_STATES } from '../utils/constants';
+import { DRIVER_STATES, getDriverEffectiveStatus } from '../utils/constants';
 
 export default function DriverDetail({ driver, onBack }) {
   const [activeTab, setActiveTab] = useState('overview');
@@ -80,7 +80,10 @@ export default function DriverDetail({ driver, onBack }) {
         </button>
         <h2 style={{ fontSize: '1.4rem', color: '#FFF' }}>{driver.fullName || 'Driver Details'}</h2>
         <span className="badge badge-info">ID: {driver.id}</span>
-        <span className="badge badge-success">{DRIVER_STATES[driver.accountStatus] || driver.accountStatus}</span>
+        {(() => {
+          const eff = getDriverEffectiveStatus(driver);
+          return <span className={`badge ${eff.badgeClass}`}>{eff.label}</span>;
+        })()}
       </div>
 
       {/* Tabs */}

@@ -14,7 +14,7 @@ import {
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
-import { DRIVER_STATES } from '../utils/constants';
+import { DRIVER_STATES, getDriverEffectiveStatus, matchesLifecycleState } from '../utils/constants';
 import { formatDateTime } from '../utils/formatters';
 import Modal from '../components/Modal';
 
@@ -35,8 +35,8 @@ export default function Drivers({ onSelectDriver }) {
       (d.mobileNumber || '').includes(search) ||
       (d.id || '').toLowerCase().includes(search.toLowerCase());
     
-    if (statusFilter === 'ALL') return matchesSearch;
-    return matchesSearch && d.accountStatus === statusFilter;
+    if (!matchesSearch) return false;
+    return matchesLifecycleState(d, statusFilter);
   });
 
   const handleStatusChange = async () => {
@@ -167,14 +167,19 @@ export default function Drivers({ onSelectDriver }) {
 
             <select
               className="form-select"
-              style={{ width: 220 }}
+              style={{ minWidth: 260 }}
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="ALL">All Lifecycle States</option>
-              {Object.entries(DRIVER_STATES).map(([k, label]) => (
-                <option key={k} value={k}>{label}</option>
-              ))}
+              <option value="ALL">All Lifecycle States ({drivers.length})</option>
+              {Object.entries(DRIVER_STATES).map(([k, label]) => {
+                const count = drivers.filter(d => matchesLifecycleState(d, k)).length;
+                return (
+                  <option key={k} value={k}>
+                    {label} ({count})
+                  </option>
+                );
+              })}
             </select>
           </div>
         </div>
@@ -193,7 +198,9 @@ export default function Drivers({ onSelectDriver }) {
               </tr>
             </thead>
             <tbody>
-              {filteredDrivers.map(d => (
+              {filteredDrivers.map(d => {
+                const effStatus = getDriverEffectiveStatus(d);
+                return (
                 <tr key={d.id}>
                   <td>
                     <div style={{ fontWeight: 600, color: '#FFF' }}>{d.fullName || 'New Applicant'}</div>
@@ -210,8 +217,8 @@ export default function Drivers({ onSelectDriver }) {
                     )}
                   </td>
                   <td>
-                    <span className={`badge ${getStatusBadgeClass(d.accountStatus)}`}>
-                      {DRIVER_STATES[d.accountStatus] || d.accountStatus || 'Registered'}
+                    <span className={`badge ${effStatus.badgeClass}`}>
+                      {effStatus.label}
                     </span>
                   </td>
                   <td>
@@ -283,12 +290,29 @@ export default function Drivers({ onSelectDriver }) {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
 
               {filteredDrivers.length === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: '#64748B' }}>
-                    No drivers match the selected search and filter criteria.
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                    <div style={{ color: '#E2E8F0', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
+                      No drivers found in &ldquo;{DRIVER_STATES[statusFilter] || statusFilter}&rdquo;
+                    </div>
+                    <div style={{ color: '#94A3B8', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+                      {statusFilter !== 'ALL' 
+                        ? `There are currently 0 drivers in the "${DRIVER_STATES[statusFilter] || statusFilter}" lifecycle stage.` 
+                        : 'No drivers found matching your search term.'}
+                    </div>
+                    {(statusFilter !== 'ALL' || search) && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', margin: '0 auto' }}
+                        onClick={() => { setStatusFilter('ALL'); setSearch(''); }}
+                      >
+                        <RotateCcw size={14} /> Show All Lifecycle States ({drivers.length})
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
