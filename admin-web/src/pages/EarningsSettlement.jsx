@@ -1264,7 +1264,7 @@ export default function EarningsSettlement() {
             <div>• <b>Petrol Policy:</b> Petrol is an <u>Owner Expense</u>. Never deduct petrol from ride income! Record it below in the separate Owner Fuel Ledger.</div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div className="form-group">
               <label className="form-label">Select Driver</label>
               <select
@@ -1293,7 +1293,7 @@ export default function EarningsSettlement() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div className="form-group">
               <label className="form-label">Verified Gross Platform Income (₹)</label>
               <input
@@ -1322,7 +1322,7 @@ export default function EarningsSettlement() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div className="form-group">
               <label className="form-label">Cash Fares Collected by Driver (₹)</label>
               <input
@@ -1348,21 +1348,21 @@ export default function EarningsSettlement() {
               />
               <span style={{ fontSize: '0.72rem', color: '#F59E0B' }}>Owner expense ledger — ZERO deduction on worker share</span>
             </div>
+          </div>
 
-            <div className="form-group">
-              <label className="form-label">Unauthorized Personal Use (Joyriding) KM</label>
-              <input
-                type="number"
-                step="1"
-                className="form-input"
-                placeholder="0"
-                value={newSettlement.personalKm}
-                onChange={(e) => setNewSettlement({ ...newSettlement, personalKm: e.target.value })}
-              />
-              <span style={{ fontSize: '0.72rem', color: '#F87171' }}>
-                {personalFuelCharge > 0 ? `Deducting ${formatCurrency(personalFuelCharge)} personal fuel from worker share` : 'Off-duty km fuel is deducted from worker'}
-              </span>
-            </div>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label className="form-label">Unauthorized Personal Use (Joyriding) KM</label>
+            <input
+              type="number"
+              step="1"
+              className="form-input"
+              placeholder="0"
+              value={newSettlement.personalKm}
+              onChange={(e) => setNewSettlement({ ...newSettlement, personalKm: e.target.value })}
+            />
+            <span style={{ fontSize: '0.72rem', color: '#F87171' }}>
+              {personalFuelCharge > 0 ? `Deducting ${formatCurrency(personalFuelCharge)} personal fuel from worker share` : 'Off-duty km fuel is deducted from worker'}
+            </span>
           </div>
 
           {fuelAmount > 0 && (
