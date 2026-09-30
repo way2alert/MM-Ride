@@ -537,7 +537,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
   const criticalAlerts = allAlerts.filter(x => x.risk.level === 'CRITICAL');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+    <div className="live-monitoring-root" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
       {/* Anti-Absconding Threat Radar Banner (Active during critical breach combinations) */}
       {criticalAlerts.length > 0 && (
         <div style={{
@@ -906,7 +906,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
       </div>
 
       {/* Main Map + Side Telemetry Panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: activeSelectedDriver ? '1fr 340px' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
+      <div className="live-monitoring-layout" style={{ display: 'grid', gridTemplateColumns: activeSelectedDriver ? '1fr 340px' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
         <div style={{ height: '100%', minHeight: 500 }}>
           <LiveMap
             drivers={filteredMapDrivers}

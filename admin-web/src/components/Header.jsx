@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Bell, Volume2 } from 'lucide-react';
+import { ShieldCheck, Bell, Volume2, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { playNotificationChime } from './NotificationBanner';
 
-export default function Header({ title, subtitle, setTab }) {
+export default function Header({ title, subtitle, setTab, onMenuToggle }) {
   const { userRole } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -30,9 +30,20 @@ export default function Header({ title, subtitle, setTab }) {
 
   return (
     <header className="topbar">
-      <div className="topbar-title-group">
-        <h2>{title}</h2>
-        <p>{subtitle}</p>
+      <div className="topbar-left-group">
+        <button 
+          type="button"
+          className="mobile-menu-toggle-btn"
+          onClick={onMenuToggle}
+          title="Open Menu"
+          aria-label="Open Navigation Menu"
+        >
+          <Menu size={22} />
+        </button>
+        <div className="topbar-title-group">
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
       </div>
 
       <div className="topbar-actions">

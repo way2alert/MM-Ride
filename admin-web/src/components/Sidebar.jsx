@@ -15,13 +15,14 @@ import {
   FileText, 
   ScrollText, 
   Settings, 
-  LogOut 
+  LogOut,
+  X 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
-export default function Sidebar({ currentTab, setTab }) {
+export default function Sidebar({ currentTab, setTab, mobileOpen, onClose }) {
   const { currentUser, userRole, logout } = useAuth();
   const [pendingVerifCount, setPendingVerifCount] = useState(0);
   const [pendingAddressCount, setPendingAddressCount] = useState(0);
@@ -116,48 +117,62 @@ export default function Sidebar({ currentTab, setTab }) {
   ];
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-header">
-        <img src="/logo.png" alt="MM Ride Logo" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'contain' }} />
-        <div className="brand-text">
-          <h1>MM RIDE</h1>
-          <span>ADMIN PLATFORM</span>
-        </div>
-      </div>
-
-      <nav className="sidebar-nav">
-        {navCategories.map((group) => (
-          <div key={group.title} className="nav-group">
-            <div className="nav-section-title">
-              <span>{group.title}</span>
-            </div>
-            <div className="nav-group-items">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = currentTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    className={`nav-item ${isActive ? 'active' : ''}`}
-                    onClick={() => setTab(item.id)}
-                    title={item.label}
-                  >
-                    <div className="nav-icon-wrap">
-                      <Icon size={16} />
-                    </div>
-                    <span className="nav-item-label">{item.label}</span>
-                    {item.badge > 0 && (
-                      <span className="nav-badge">
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+    <>
+      {mobileOpen && (
+        <div className="sidebar-backdrop" onClick={onClose} />
+      )}
+      <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-header">
+          <img src="/logo.png" alt="MM Ride Logo" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'contain' }} />
+          <div className="brand-text">
+            <h1>MM RIDE</h1>
+            <span>ADMIN PLATFORM</span>
           </div>
-        ))}
-      </nav>
+          <button 
+            className="sidebar-close-btn" 
+            onClick={onClose} 
+            title="Close navigation"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <nav className="sidebar-nav">
+          {navCategories.map((group) => (
+            <div key={group.title} className="nav-group">
+              <div className="nav-section-title">
+                <span>{group.title}</span>
+              </div>
+              <div className="nav-group-items">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      className={`nav-item ${isActive ? 'active' : ''}`}
+                      onClick={() => {
+                        setTab(item.id);
+                        if (onClose) onClose();
+                      }}
+                      title={item.label}
+                    >
+                      <div className="nav-icon-wrap">
+                        <Icon size={16} />
+                      </div>
+                      <span className="nav-item-label">{item.label}</span>
+                      {item.badge > 0 && (
+                        <span className="nav-badge">
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
 
       <div className="sidebar-footer">
         <div className="user-snippet">
@@ -178,5 +193,6 @@ export default function Sidebar({ currentTab, setTab }) {
         </button>
       </div>
     </aside>
+    </>
   );
 }

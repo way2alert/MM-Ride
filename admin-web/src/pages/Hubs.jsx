@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Warehouse, Plus, MapPin, Phone, ShieldCheck } from 'lucide-react';
+import { Warehouse, Plus, MapPin, Phone, ShieldCheck, LocateFixed, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
@@ -9,15 +9,77 @@ export default function Hubs() {
   const [hubs, setHubs] = useState([]);
   const [addModal, setAddModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState({
+    loading: false,
+    success: false,
+    error: null,
+    accuracy: null
+  });
 
   const [newHub, setNewHub] = useState({
     name: '',
     address: '',
-    latitude: '28.6328',
-    longitude: '77.2197',
+    latitude: '',
+    longitude: '',
     radiusMeters: 400,
-    managerContact: '+91 9876543210'
+    managerContact: ''
   });
+
+  const fetchDepotGps = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus({
+        loading: false,
+        success: false,
+        error: 'Geolocation sensor is not supported by your browser.',
+        accuracy: null
+      });
+      return;
+    }
+
+    setGpsStatus({ loading: true, success: false, error: null, accuracy: null });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        const accuracy = Math.round(position.coords.accuracy);
+
+        setNewHub(prev => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng
+        }));
+
+        setGpsStatus({
+          loading: false,
+          success: true,
+          error: null,
+          accuracy
+        });
+      },
+      (error) => {
+        let msg = 'Failed to detect depot GPS location.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Location permission denied. Please allow GPS location in your browser.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'GPS signal unavailable. Ensure location is turned ON on this device.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'GPS location request timed out. Please try again.';
+        }
+        setGpsStatus({
+          loading: false,
+          success: false,
+          error: msg,
+          accuracy: null
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      }
+    );
+  };
 
   useEffect(() => {
     return subscribeToCollection('hubs', setHubs);
@@ -32,8 +94,8 @@ export default function Hubs() {
         id: hubId,
         name: newHub.name,
         address: newHub.address,
-        latitude: Number(newHub.latitude),
-        longitude: Number(newHub.longitude),
+        latitude: Number(newHub.latitude) || 0,
+        longitude: Number(newHub.longitude) || 0,
         radiusMeters: Number(newHub.radiusMeters),
         managerContact: newHub.managerContact,
         active: true,
@@ -51,11 +113,12 @@ export default function Hubs() {
       setNewHub({
         name: '',
         address: '',
-        latitude: '28.6328',
-        longitude: '77.2197',
+        latitude: '',
+        longitude: '',
         radiusMeters: 400,
-        managerContact: '+91 9876543210'
+        managerContact: ''
       });
+      setGpsStatus({ loading: false, success: false, error: null, accuracy: null });
     } catch (err) {
       alert(`Error creating hub: ${err.message}`);
     } finally {
@@ -147,12 +210,82 @@ export default function Hubs() {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* GPS Auto-Detection for Depot */}
+          <div style={{
+            marginBottom: '1.25rem',
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '10px',
+            padding: '0.85rem 1rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <LocateFixed size={18} color="#F59E0B" />
+                <div>
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FFF' }}>Depot Location GPS</span>
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: '#94A3B8' }}>Auto-fetch current position if standing at depot</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={fetchDepotGps}
+                disabled={gpsStatus.loading}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  backgroundColor: '#F59E0B',
+                  color: '#000',
+                  fontWeight: 700,
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '6px'
+                }}
+              >
+                {gpsStatus.loading ? (
+                  <>
+                    <Loader2 size={14} className="spin" />
+                    <span>Detecting GPS...</span>
+                  </>
+                ) : (
+                  <>
+                    <LocateFixed size={14} />
+                    <span>{newHub.latitude ? 'Re-Detect GPS' : 'Auto-Fetch Current GPS'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {gpsStatus.loading && (
+              <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#FCD34D', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Loader2 size={13} className="spin" />
+                <span>Reading device GPS satellites... Please allow browser location access if prompted.</span>
+              </div>
+            )}
+
+            {gpsStatus.success && (
+              <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                <CheckCircle size={14} />
+                <span>Depot GPS locked (Accuracy: ±{gpsStatus.accuracy}m). Latitude & Longitude set.</span>
+              </div>
+            )}
+
+            {gpsStatus.error && (
+              <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#EF4444', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+                <XCircle size={14} />
+                <span>{gpsStatus.error}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
               <label className="form-label">Depot Latitude</label>
               <input
                 type="text"
                 className="form-input"
+                placeholder="e.g. 13.0827"
                 value={newHub.latitude}
                 onChange={(e) => setNewHub({ ...newHub, latitude: e.target.value })}
                 required
@@ -163,6 +296,7 @@ export default function Hubs() {
               <input
                 type="text"
                 className="form-input"
+                placeholder="e.g. 80.2707"
                 value={newHub.longitude}
                 onChange={(e) => setNewHub({ ...newHub, longitude: e.target.value })}
                 required
@@ -170,7 +304,7 @@ export default function Hubs() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
               <label className="form-label">Authorized Geofence Radius (meters)</label>
               <input
@@ -186,6 +320,7 @@ export default function Hubs() {
               <input
                 type="text"
                 className="form-input"
+                placeholder="+91 98765 43210"
                 value={newHub.managerContact}
                 onChange={(e) => setNewHub({ ...newHub, managerContact: e.target.value })}
               />

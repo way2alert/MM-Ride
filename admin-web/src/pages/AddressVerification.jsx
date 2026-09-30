@@ -5,7 +5,9 @@ import {
   CheckCircle, 
   XCircle, 
   RotateCw, 
-  Calendar 
+  Calendar,
+  LocateFixed,
+  Loader2
 } from 'lucide-react';
 import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -21,11 +23,73 @@ export default function AddressVerification() {
     isOpen: false,
     result: 'VERIFIED',
     officerName: 'Field Inspector',
-    latitude: '28.6139',
-    longitude: '77.2090',
+    latitude: '',
+    longitude: '',
     notes: ''
   });
   const [loading, setLoading] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState({
+    loading: false,
+    success: false,
+    error: null,
+    accuracy: null
+  });
+
+  const fetchCurrentGps = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus({
+        loading: false,
+        success: false,
+        error: 'Geolocation sensor is not supported by your browser.',
+        accuracy: null
+      });
+      return;
+    }
+
+    setGpsStatus({ loading: true, success: false, error: null, accuracy: null });
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lng = position.coords.longitude.toFixed(6);
+        const accuracy = Math.round(position.coords.accuracy);
+
+        setVerifModal(prev => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng
+        }));
+
+        setGpsStatus({
+          loading: false,
+          success: true,
+          error: null,
+          accuracy
+        });
+      },
+      (error) => {
+        let msg = 'Failed to detect officer GPS location.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Location permission denied. Please allow GPS location in your browser settings.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'GPS signal unavailable. Please ensure mobile phone Location / GPS is turned ON.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'GPS location request timed out. Please tap retry.';
+        }
+        setGpsStatus({
+          loading: false,
+          success: false,
+          error: msg,
+          accuracy: null
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      }
+    );
+  };
 
   useEffect(() => {
     const unsubAddr = subscribeToCollection('addresses', setAddresses);
@@ -153,11 +217,12 @@ export default function AddressVerification() {
                           setVerifModal({
                             isOpen: true,
                             result: 'VERIFIED',
-                            officerName: 'Inspector Kumar',
-                            latitude: '28.6139',
-                            longitude: '77.2090',
-                            notes: 'Physical residence confirmed. Met family member.'
+                            officerName: 'Field Inspector',
+                            latitude: '',
+                            longitude: '',
+                            notes: ''
                           });
+                          fetchCurrentGps();
                         }}
                       >
                         <MapPin size={14} /> Record Visit
@@ -226,12 +291,82 @@ export default function AddressVerification() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        {/* GPS Auto-Detection Card */}
+        <div style={{
+          marginBottom: '1.25rem',
+          background: 'rgba(245, 158, 11, 0.08)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          borderRadius: '10px',
+          padding: '0.85rem 1rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.6rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <LocateFixed size={18} color="#F59E0B" />
+              <div>
+                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FFF' }}>Officer Live GPS</span>
+                <span style={{ display: 'block', fontSize: '0.72rem', color: '#94A3B8' }}>Auto-detected from phone sensor</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={fetchCurrentGps}
+              disabled={gpsStatus.loading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                backgroundColor: '#F59E0B',
+                color: '#000',
+                fontWeight: 700,
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '6px'
+              }}
+            >
+              {gpsStatus.loading ? (
+                <>
+                  <Loader2 size={14} className="spin" />
+                  <span>Locking GPS...</span>
+                </>
+              ) : (
+                <>
+                  <LocateFixed size={14} />
+                  <span>{verifModal.latitude ? 'Re-Detect GPS' : 'Auto-Fetch GPS'}</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {gpsStatus.loading && (
+            <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#FCD34D', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Loader2 size={13} className="spin" />
+              <span>Querying device GPS sensors... Please allow location permission if prompted.</span>
+            </div>
+          )}
+
+          {gpsStatus.success && (
+            <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+              <CheckCircle size={14} />
+              <span>GPS captured (Accuracy: ±{gpsStatus.accuracy}m). Latitude & Longitude auto-filled.</span>
+            </div>
+          )}
+
+          {gpsStatus.error && (
+            <div style={{ marginTop: '0.6rem', fontSize: '0.78rem', color: '#EF4444', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600 }}>
+              <XCircle size={14} />
+              <span>{gpsStatus.error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
           <div className="form-group">
             <label className="form-label">Officer GPS Latitude</label>
             <input
               type="text"
               className="form-input"
+              placeholder="e.g. 13.0827"
               value={verifModal.latitude}
               onChange={(e) => setVerifModal(prev => ({ ...prev, latitude: e.target.value }))}
             />
@@ -241,6 +376,7 @@ export default function AddressVerification() {
             <input
               type="text"
               className="form-input"
+              placeholder="e.g. 80.2707"
               value={verifModal.longitude}
               onChange={(e) => setVerifModal(prev => ({ ...prev, longitude: e.target.value }))}
             />
