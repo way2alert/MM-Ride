@@ -208,6 +208,21 @@ export default function AddressVerification() {
                     <td>
                       <div>{a.verifiedBy || '—'}</div>
                       {a.verifiedAt && <div style={{ fontSize: '0.72rem', color: '#64748B' }}>{formatDateTime(a.verifiedAt)}</div>}
+                      {a.verificationGps && a.verificationGps.latitude && (
+                        <div style={{ marginTop: '0.25rem' }}>
+                          <a
+                            href={`https://www.google.com/maps?q=${a.verificationGps.latitude},${a.verificationGps.longitude}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="badge badge-info"
+                            style={{ fontSize: '0.68rem', padding: '2px 6px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                            title="Open verified location in Google Maps"
+                          >
+                            <MapPin size={10} />
+                            <span>{Number(a.verificationGps.latitude).toFixed(4)}, {Number(a.verificationGps.longitude).toFixed(4)}</span>
+                          </a>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <button

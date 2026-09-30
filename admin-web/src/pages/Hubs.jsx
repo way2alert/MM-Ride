@@ -156,7 +156,21 @@ export default function Hubs() {
                 <tr key={h.id}>
                   <td><b>{h.name}</b></td>
                   <td>{h.address}</td>
-                  <td><code>{h.latitude?.toFixed(4)}, {h.longitude?.toFixed(4)}</code></td>
+                  <td>
+                    {h.latitude && h.longitude ? (
+                      <a 
+                        href={`https://www.google.com/maps?q=${h.latitude},${h.longitude}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="badge badge-info"
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        title="Open Depot Location on Google Maps"
+                      >
+                        <MapPin size={11} />
+                        <span>{Number(h.latitude).toFixed(4)}, {Number(h.longitude).toFixed(4)}</span>
+                      </a>
+                    ) : '—'}
+                  </td>
                   <td><span className="badge badge-warning">{h.radiusMeters || 300} meters</span></td>
                   <td>{h.managerContact || '—'}</td>
                   <td>
