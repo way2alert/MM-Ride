@@ -525,30 +525,41 @@ export default function ActiveDutyScreen({ navigation }) {
 
   // Trajectory Correlation: Detect Offline Cash Rides after Platform Cancellation (Problem 4)
   useEffect(() => {
-    if (activeRideEvent && isSimulatingMovement) {
-      const stepDist = Math.round((simStep * 0.4) * 10) / 10;
-      setRideDistKm(stepDist);
+    if (!activeRideEvent) return;
 
-      if (activeRideEvent.eventType === 'RIDE_CANCELLED' && stepDist > 2.0 && !offlineCashAlertLogged && driverProfile?.id) {
-        setOfflineCashAlertLogged(true);
-        addDoc(collection(db, 'securityAlerts'), {
-          type: 'SUSPECTED_OFFLINE_CASH_RIDE',
-          driverId: driverProfile.id,
-          bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
-          severity: 'CRITICAL',
-          message: `Vehicle moved ${stepDist} km after ride cancellation on ${activeRideEvent.platform}. Undeclared cash trip suspected.`,
-          timestamp: new Date().toISOString()
+    let distTraveledKm = 0;
+
+    if (isSimulatingMovement) {
+      distTraveledKm = Math.round((simStep * 0.4) * 10) / 10;
+    } else if (activeRideEvent.location?.latitude && currentLocation?.latitude) {
+      const dLat = (currentLocation.latitude - activeRideEvent.location.latitude) * 111;
+      const dLng = (currentLocation.longitude - activeRideEvent.location.longitude) * 111;
+      distTraveledKm = Math.round(Math.sqrt(dLat * dLat + dLng * dLng) * 10) / 10;
+    }
+
+    if (distTraveledKm > 0) {
+      setRideDistKm(distTraveledKm);
+    }
+
+    if (activeRideEvent.eventType === 'RIDE_CANCELLED' && distTraveledKm > 2.0 && !offlineCashAlertLogged && driverProfile?.id) {
+      setOfflineCashAlertLogged(true);
+      addDoc(collection(db, 'securityAlerts'), {
+        type: 'SUSPECTED_OFFLINE_CASH_RIDE',
+        driverId: driverProfile.id,
+        bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+        severity: 'CRITICAL',
+        message: `Vehicle moved ${distTraveledKm} km after ride cancellation on ${activeRideEvent.platform}. Undeclared cash trip suspected.`,
+        timestamp: new Date().toISOString()
+      }).catch(console.warn);
+
+      if (activeRideEvent.id) {
+        updateDoc(doc(db, 'platformRideEvents', activeRideEvent.id), {
+          suspectedOfflineCashRide: true,
+          distanceAfterEventKm: distTraveledKm
         }).catch(console.warn);
-
-        if (activeRideEvent.id) {
-          updateDoc(doc(db, 'platformRideEvents', activeRideEvent.id), {
-            suspectedOfflineCashRide: true,
-            distanceAfterEventKm: stepDist
-          }).catch(console.warn);
-        }
       }
     }
-  }, [simStep, isSimulatingMovement, activeRideEvent, offlineCashAlertLogged, driverProfile?.id]);
+  }, [simStep, isSimulatingMovement, activeRideEvent, currentLocation, offlineCashAlertLogged, driverProfile?.id]);
 
   const handleSimulateGigEvent = async (platform, eventType, text) => {
     try {
