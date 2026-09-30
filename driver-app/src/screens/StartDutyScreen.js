@@ -216,7 +216,7 @@ export default function StartDutyScreen({ navigation }) {
           {proximityResult.within ? '📍 Authorized Depot Proximity Verified' : '⚠️ Depot Proximity Alert'}
         </Text>
         <Text style={styles.geoDesc}>
-          Depot: <Text style={{ fontWeight: 'bold' }}>{selectedHub?.name || 'Central Operations Hub Chennai'}</Text>
+          Depot: <Text style={{ fontWeight: 'bold' }}>{selectedHub?.name || 'Sitapuri Depot'}</Text>
         </Text>
         <Text style={styles.geoDesc}>
           GPS Location: <Text style={{ fontWeight: 'bold' }}>{currentLocation ? 'Live GPS Locked' : 'Depot Coords Active'}</Text>

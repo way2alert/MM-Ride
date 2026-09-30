@@ -629,7 +629,7 @@ export default function ActiveDutyScreen({ navigation }) {
               🚨 GEOFENCE PERIMETER BREACH ({distFromHubKm} KM FROM HUB)
             </Text>
             <Text style={{ color: '#FECACA', fontSize: 12, lineHeight: 18 }}>
-              You have exited the 45 km authorized metropolitan zone. Shift violation recorded. Turn back toward Chennai immediately to avoid remote engine cut-off and police dispatch.
+              You have exited the 45 km authorized metropolitan zone. Shift violation recorded. Turn back toward the authorized operating zone immediately to avoid remote engine cut-off and police dispatch.
             </Text>
           </View>
         ) : isGeofenceWarning ? (

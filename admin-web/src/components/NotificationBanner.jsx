@@ -49,6 +49,13 @@ export default function NotificationBanner({ setTab }) {
   const [notificationPermission, setNotificationPermission] = useState(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
   );
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('phoneAlertsDismissed') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const prevCountRef = useRef(0);
   const initialLoadRef = useRef(true);
 
@@ -253,8 +260,8 @@ export default function NotificationBanner({ setTab }) {
         </div>
       )}
 
-      {/* 2. Push Notification Enable Prompt (if not granted yet on Phone/Browser) */}
-      {notificationPermission !== 'granted' && (
+      {/* 2. Push Notification Enable Prompt (if not granted yet on Phone/Browser and not dismissed) */}
+      {notificationPermission !== 'granted' && !bannerDismissed && (
         <div style={{
           backgroundColor: 'rgba(245, 158, 11, 0.12)',
           borderBottom: '1px solid rgba(245, 158, 11, 0.3)',
@@ -269,21 +276,43 @@ export default function NotificationBanner({ setTab }) {
             <Smartphone size={15} />
             <span>Enable phone notifications to get instant alerts whenever drivers register!</span>
           </div>
-          <button
-            onClick={requestPushPermission}
-            style={{
-              backgroundColor: '#F59E0B',
-              color: '#000',
-              border: 'none',
-              borderRadius: 4,
-              padding: '3px 10px',
-              fontSize: '0.74rem',
-              fontWeight: 700,
-              cursor: 'pointer'
-            }}
-          >
-            Enable Phone Alerts
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={requestPushPermission}
+              style={{
+                backgroundColor: '#F59E0B',
+                color: '#000',
+                border: 'none',
+                borderRadius: 4,
+                padding: '3px 10px',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Enable Phone Alerts
+            </button>
+            <button
+              onClick={() => {
+                setBannerDismissed(true);
+                try {
+                  sessionStorage.setItem('phoneAlertsDismissed', 'true');
+                } catch (e) {}
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#FBBF24',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+              title="Dismiss"
+            >
+              <X size={15} />
+            </button>
+          </div>
         </div>
       )}
     </>
