@@ -44,22 +44,47 @@ export default function Sidebar({ currentTab, setTab }) {
     return () => unsub();
   }, []);
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'live-map', label: 'Live Monitoring', icon: MapPin },
-    { id: 'drivers', label: 'Drivers', icon: Users, badge: pendingVerifCount },
-    { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
-    { id: 'address-verif', label: 'Address Verification', icon: Home },
-    { id: 'bikes', label: 'Fleet Bikes', icon: Bike },
-    { id: 'devices', label: 'Devices (MDM)', icon: Smartphone },
-    { id: 'hubs', label: 'Hubs & Depots', icon: Warehouse },
-    { id: 'duty-sessions', label: 'Duty Shifts', icon: Clock },
-    { id: 'settlements', label: 'Earnings & Settlement', icon: CircleDollarSign },
-    { id: 'leave', label: 'Leave Requests', icon: CalendarOff },
-    { id: 'incidents', label: 'Incidents & Damages', icon: AlertTriangle },
-    { id: 'reports', label: 'Export Reports', icon: FileText },
-    { id: 'audit-logs', label: 'Audit Trail', icon: ScrollText },
-    { id: 'settings', label: 'Settings', icon: Settings },
+  const navCategories = [
+    {
+      title: 'Fleet Command',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'live-map', label: 'Live Monitoring', icon: MapPin },
+        { id: 'duty-sessions', label: 'Duty Shifts & Log', icon: Clock },
+      ]
+    },
+    {
+      title: 'Drivers & Onboarding',
+      items: [
+        { id: 'drivers', label: 'Driver Directory', icon: Users },
+        { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
+        { id: 'address-verif', label: 'Address Verification', icon: Home },
+        { id: 'leave', label: 'Leave Requests', icon: CalendarOff },
+      ]
+    },
+    {
+      title: 'Vehicles & Hardware',
+      items: [
+        { id: 'bikes', label: 'Fleet Bikes', icon: Bike },
+        { id: 'devices', label: 'Devices (MDM)', icon: Smartphone },
+        { id: 'hubs', label: 'Hubs & Depots', icon: Warehouse },
+        { id: 'incidents', label: 'Incidents & Damages', icon: AlertTriangle },
+      ]
+    },
+    {
+      title: 'Finance & Accounts',
+      items: [
+        { id: 'settlements', label: 'Earnings & Settlement', icon: CircleDollarSign },
+        { id: 'reports', label: 'Export Reports', icon: FileText },
+      ]
+    },
+    {
+      title: 'Security & System',
+      items: [
+        { id: 'audit-logs', label: 'Immutable Audit Trail', icon: ScrollText },
+        { id: 'settings', label: 'System Policies', icon: Settings },
+      ]
+    }
   ];
 
   return (
@@ -73,51 +98,37 @@ export default function Sidebar({ currentTab, setTab }) {
       </div>
 
       <nav className="sidebar-nav">
-        <div className="nav-section-title">Core Operations</div>
-        {navItems.slice(0, 8).map((item) => {
-          const Icon = item.icon;
-          const isActive = currentTab === item.id;
-          return (
-            <button
-              key={item.id}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setTab(item.id)}
-            >
-              <Icon size={18} />
-              <span>{item.label}</span>
-              {item.badge > 0 && (
-                <span style={{
-                  marginLeft: 'auto',
-                  backgroundColor: '#EF4444',
-                  color: '#FFF',
-                  fontSize: '0.68rem',
-                  fontWeight: '800',
-                  padding: '2px 7px',
-                  borderRadius: 9999,
-                  boxShadow: '0 0 10px rgba(239, 68, 68, 0.5)'
-                }}>
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        <div className="nav-section-title">Finance & Controls</div>
-        {navItems.slice(8).map((item) => {
-          const Icon = item.icon;
-          const isActive = currentTab === item.id;
-          return (
-            <button
-              key={item.id}
-              className={`nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setTab(item.id)}
-            >
-              <Icon size={18} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+        {navCategories.map((group) => (
+          <div key={group.title} className="nav-group">
+            <div className="nav-section-title">
+              <span>{group.title}</span>
+            </div>
+            <div className="nav-group-items">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    className={`nav-item ${isActive ? 'active' : ''}`}
+                    onClick={() => setTab(item.id)}
+                    title={item.label}
+                  >
+                    <div className="nav-icon-wrap">
+                      <Icon size={16} />
+                    </div>
+                    <span className="nav-item-label">{item.label}</span>
+                    {item.badge > 0 && (
+                      <span className="nav-badge">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-footer">
