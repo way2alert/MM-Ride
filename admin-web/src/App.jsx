@@ -113,7 +113,7 @@ export default function App() {
       {currentTab === 'incidents' && <Incidents />}
       {currentTab === 'reports' && <Reports />}
       {currentTab === 'audit-logs' && <AuditLogs />}
-      {currentTab === 'settings' && <Settings setTab={setTab} />}
+      {currentTab === 'settings' && <Settings setTab={setCurrentTab} />}
     </Layout>
   );
 }
