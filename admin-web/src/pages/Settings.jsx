@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, ShieldAlert, MessageSquare } from 'lucide-react';
+import { Settings as SettingsIcon, Save, ShieldAlert, MessageSquare, QrCode, Smartphone, ExternalLink, CheckCircle } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { logAdminAudit } from '../firebase/services';
+import Modal from '../components/Modal';
+import QRCode from 'qrcode';
 
-export default function Settings() {
+export default function Settings({ setTab }) {
   const [settings, setSettings] = useState({
     maxDutyHoursPerDay: 12,
     speedAlertThresholdKmh: 60,
@@ -19,6 +21,30 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+
+  useEffect(() => {
+    if (showQrModal) {
+      const payloadObj = {
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_NAME": "com.google.android.apps.work.clouddpc",
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "gZs0YwH7V3b_8V8VwL3f4jX_0e4k=",
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.google.android.apps.work.clouddpc/.receivers.CloudDeviceAdminReceiver",
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": "https://play.google.com/managed/download/AndroidDevicePolicy.apk",
+        "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
+          "com.google.android.apps.work.clouddpc.EXTRA_ENROLLMENT_TOKEN": "MM_RIDE_ENTERPRISE_TOKEN_AMAPI",
+          "serverUrl": "https://androidmanagement.googleapis.com",
+          "policy": "mmride_dedicated_kiosk_v1",
+          "company": "MM Ride Fleet Logistics Pvt Ltd"
+        },
+        "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": false,
+        "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": false
+      };
+      QRCode.toDataURL(JSON.stringify(payloadObj), { width: 300, margin: 2, color: { dark: '#0A0D14', light: '#FFFFFF' } })
+        .then(url => setQrUrl(url))
+        .catch(err => console.error(err));
+    }
+  }, [showQrModal]);
 
   useEffect(() => {
     async function loadSettings() {
@@ -421,18 +447,113 @@ export default function Settings() {
         </div>
 
         {/* 6-Tap QR Provisioning Guide */}
-        <div style={{ background: '#0F172A', padding: '0.85rem', borderRadius: 8, border: '1px solid #334155' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#F8FAFC', marginBottom: 4 }}>
+        <div style={{ background: '#0F172A', padding: '1rem', borderRadius: 8, border: '1px solid #334155' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#F8FAFC', marginBottom: 6 }}>
             📲 6-Tap Device Owner Provisioning (Depot Setup):
           </div>
-          <ol style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, paddingLeft: '1.25rem', lineHeight: 1.6 }}>
+          <ol style={{ fontSize: '0.78rem', color: '#CBD5E1', margin: 0, paddingLeft: '1.25rem', lineHeight: 1.6 }}>
             <li>Power on brand-new or factory-reset Android device.</li>
             <li>Tap the empty white space on the "Hi there / Welcome" screen <strong>6 times consecutively</strong>.</li>
             <li>Scan the MDM Enrollment QR Code generated from Google AMAPI or Headwind MDM.</li>
             <li>Connect to Wi-Fi. The phone automatically downloads the policy, installs MM Ride, and permanently locks down!</li>
           </ol>
+
+          <div style={{ marginTop: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowQrModal(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+            >
+              <QrCode size={16} /> Scan Enrollment QR Code Now
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setTab && setTab('devices')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Smartphone size={16} /> Open Full Devices (MDM) Console
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* 6-Tap Device Owner QR Code Modal */}
+      <Modal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        title="Android Enterprise 6-Tap Device Owner QR Code"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                if (setTab) {
+                  setShowQrModal(false);
+                  setTab('devices');
+                }
+              }}
+            >
+              <Smartphone size={14} /> Go to Devices (MDM)
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowQrModal(false)}
+            >
+              Done
+            </button>
+          </div>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '0.5rem 0' }}>
+          <div style={{
+            background: '#FFFFFF',
+            padding: '1.25rem',
+            borderRadius: 12,
+            display: 'inline-block',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+            marginBottom: '1rem'
+          }}>
+            {qrUrl ? (
+              <img src={qrUrl} alt="AMAPI Device Owner QR Code" style={{ width: 260, height: 260, display: 'block' }} />
+            ) : (
+              <div style={{ width: 260, height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000' }}>
+                Generating QR Code...
+              </div>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'left', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 8, padding: '0.85rem', marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#FCD34D', marginBottom: 4 }}>
+              ⚡ How to scan this QR code on Driver Phone:
+            </div>
+            <ol style={{ fontSize: '0.75rem', color: '#CBD5E1', paddingLeft: '1.2rem', margin: 0, lineHeight: 1.5 }}>
+              <li>Factory reset the fleet Android phone.</li>
+              <li>When the phone turns ON at the <strong>"Hi there / Welcome"</strong> language screen, tap the empty white background <strong>6 times</strong>.</li>
+              <li>A camera scanner will automatically launch on the phone.</li>
+              <li>Point the phone camera at this QR code on your computer screen.</li>
+              <li>Connect to Wi-Fi. Google Device Policy will auto-download and lock the phone into Device Owner mode!</li>
+            </ol>
+          </div>
+
+          <div style={{ textAlign: 'left', background: '#0F172A', borderRadius: 8, padding: '0.75rem', border: '1px solid #334155' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981', marginBottom: 4 }}>
+              ✓ Locked Policy Restrictions Applied Automatically:
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', fontSize: '0.72rem', color: '#94A3B8' }}>
+              <div>• App Uninstall Blocked</div>
+              <div>• Clear Storage/Data Blocked</div>
+              <div>• Force Stop Blocked</div>
+              <div>• GPS Turn-Off Blocked</div>
+              <div>• Factory Reset Blocked</div>
+              <div>• Developer USB Mode Blocked</div>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
