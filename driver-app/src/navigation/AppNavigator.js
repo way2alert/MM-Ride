@@ -20,6 +20,7 @@ import LeaveScreen from '../screens/LeaveScreen';
 import IncidentReportScreen from '../screens/IncidentReportScreen';
 import EmergencySOSScreen from '../screens/EmergencySOSScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import SuspendedScreen from '../screens/SuspendedScreen';
 
 export default function AppNavigator() {
   const { currentUser, driverProfile, activeDutySession, loading } = useDriver();
@@ -37,6 +38,19 @@ export default function AppNavigator() {
   // Not logged in -> Show Login
   if (!currentUser) {
     return <LoginScreen />;
+  }
+
+  // CRITICAL CHECK: Account Suspended -> Enforce dedicated lockdown SuspendedScreen immediately
+  const isDriverSuspended = Boolean(
+    driverProfile && (
+      driverProfile.accountStatus === 'SUSPENDED' ||
+      driverProfile.isSuspended === true ||
+      driverProfile.status === 'SUSPENDED'
+    )
+  );
+
+  if (isDriverSuspended) {
+    return <SuspendedScreen />;
   }
 
   // Registered but profile details not submitted -> Show Registration
@@ -69,7 +83,6 @@ export default function AppNavigator() {
     driverProfile.accountStatus === 'APPROVED_BIKE_NOT_ASSIGNED' ||
     driverProfile.accountStatus === 'BIKE_ASSIGNED' ||
     driverProfile.accountStatus === 'BIKE_HANDOVER_PENDING' ||
-    driverProfile.accountStatus === 'SUSPENDED' ||
     driverProfile.accountStatus === 'REJECTED' ||
     driverProfile.accountStatus === 'ACCOUNT_CLOSED'
   ) {

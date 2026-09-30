@@ -104,12 +104,24 @@ export default function ProfileScreen({ navigation }) {
           </Text>
         </View>
 
-        <BigButton
-          title="Sign Out of Device"
-          onPress={handleLogout}
-          variant="danger"
-          style={{ marginTop: 10, marginBottom: 40 }}
-        />
+        {!(driverProfile?.approvalStatus === 'APPROVED' || driverProfile?.accountStatus === 'ACTIVE_DRIVER' || driverProfile?.accountStatus === 'BIKE_ASSIGNED') ? (
+          <BigButton
+            title="Sign Out of Device"
+            onPress={handleLogout}
+            variant="danger"
+            style={{ marginTop: 10, marginBottom: 40 }}
+          />
+        ) : (
+          <View style={styles.enterpriseLockCard}>
+            <Text style={{ fontSize: 22, marginRight: 12 }}>🔒</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.enterpriseLockTitle}>COMPANY TERMINAL SECURED</Text>
+              <Text style={styles.enterpriseLockSub}>
+                Your approved partner account is locked to this fleet phone. To change or surrender device, contact Depot Operations.
+              </Text>
+            </View>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -206,5 +218,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 18
+  },
+  enterpriseLockCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 10,
+    marginBottom: 40
+  },
+  enterpriseLockTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#34D399',
+    letterSpacing: 0.5,
+    marginBottom: 4
+  },
+  enterpriseLockSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 16
   }
 });

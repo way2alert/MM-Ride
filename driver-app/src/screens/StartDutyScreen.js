@@ -5,7 +5,8 @@ import {
   TextInput, 
   StyleSheet, 
   ScrollView, 
-  Alert 
+  Alert,
+  TouchableOpacity
 } from 'react-native';
 import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -117,8 +118,8 @@ export default function StartDutyScreen({ navigation }) {
       try {
         await addDoc(collection(db, 'securityAlerts'), {
           type: 'OFF_DUTY_UNAUTHORIZED_MILEAGE',
-          driverId: currentUser.uid,
-          bikeId: driverProfile.assignedBikeId || assignedBike?.id || null,
+          driverId: currentUser?.uid || driverProfile?.id,
+          bikeId: driverProfile?.assignedBikeId || assignedBike?.id || null,
           severity: 'HIGH',
           message: `Vehicle recorded ${offDutyDeltaKm} km of off-duty movement since last return without prior approval.`,
           deltaKm: offDutyDeltaKm,
@@ -134,8 +135,8 @@ export default function StartDutyScreen({ navigation }) {
     setLoading(true);
     try {
       await requestStartDuty({
-        driverId: currentUser.uid,
-        bikeId: driverProfile.assignedBikeId || assignedBike?.id,
+        driverId: currentUser?.uid || driverProfile?.id,
+        bikeId: driverProfile?.assignedBikeId || assignedBike?.id || null,
         hubId: selectedHub?.id || null,
         pickupGps: currentLocation ? {
           latitude: currentLocation.latitude,
@@ -161,6 +162,14 @@ export default function StartDutyScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.backButtonText}>← Back</Text>
+      </TouchableOpacity>
+
       <Text style={styles.heading}>Start Work & Shift</Text>
       <Text style={styles.subheading}>
         Verify your two-wheeler QR code & submit initial meter reading to begin monitoring
@@ -278,6 +287,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: 16,
     paddingBottom: 40
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    marginBottom: 14
+  },
+  backButtonText: {
+    color: '#CBD5E1',
+    fontSize: 13,
+    fontWeight: '700'
   },
   heading: {
     fontSize: 22,

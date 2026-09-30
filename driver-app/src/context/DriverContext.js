@@ -27,7 +27,8 @@ export function DriverProvider({ children }) {
     idleAlertThresholdMinutes: 30
   });
   const [todayDutyMinutes, setTodayDutyMinutes] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   // MDM Dedicated Device & Kiosk State
   const [restrictionState, setRestrictionState] = useState(null);
@@ -53,6 +54,7 @@ export function DriverProvider({ children }) {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
+        setProfileLoading(true);
         // Register hardware device ID and hardware metrics
         const hardwareId = await getHardwareDeviceId();
         const metrics = await getDeviceHardwareMetrics();
@@ -77,8 +79,9 @@ export function DriverProvider({ children }) {
         setAssignedBike(null);
         setActiveDutySession(null);
         setRestrictionState(null);
+        setProfileLoading(false);
       }
-      setLoading(false);
+      setAuthLoading(false);
     });
 
     return unsubAuth;
@@ -86,9 +89,13 @@ export function DriverProvider({ children }) {
 
   // 2. Real-time Driver Profile Listener
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setProfileLoading(false);
+      return;
+    }
 
     const unsubDriver = onSnapshot(doc(db, 'drivers', currentUser.uid), async (snap) => {
+      setProfileLoading(false);
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() };
         setDriverProfile(data);
@@ -285,7 +292,7 @@ export function DriverProvider({ children }) {
         currentSpeed,
         systemSettings,
         todayDutyMinutes,
-        loading,
+        loading: authLoading || (Boolean(currentUser) && profileLoading),
         logout,
         // MDM & Privacy Additions
         mdmPolicy,

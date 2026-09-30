@@ -862,20 +862,29 @@ export async function bindDriverDevice(driverId, deviceInfo) {
     // 2. Mirror record in devices collection if allowed (fails gracefully if restricted)
     try {
       const deviceRef = doc(db, 'devices', devId);
-      await setDoc(deviceRef, {
+      const exSnap = await getDoc(deviceRef).catch(() => null);
+      const curData = (exSnap && exSnap.exists()) ? exSnap.data() : null;
+      const isRestricted = curData?.status === 'SUSPENDED' || curData?.status === 'LOST';
+
+      const mirrorPayload = {
         id: devId,
         deviceId: devId,
         driverId: effectiveDriverId,
         assignedDriverId: effectiveDriverId,
-        status: 'ACTIVE',
         enrollmentStatus: 'ENROLLED',
-        policyStatus: 'COMPLIANT',
+        policyStatus: isRestricted ? 'RESTRICTED' : (curData?.policyStatus || 'COMPLIANT'),
         isOnline: true,
         lastSync: new Date().toISOString(),
         kioskExitPin: '998877',
         ...deviceInfo,
         updatedAt: serverTimestamp()
-      }, { merge: true });
+      };
+
+      if (!isRestricted) {
+        mirrorPayload.status = curData?.status || 'ACTIVE';
+      }
+
+      await setDoc(deviceRef, mirrorPayload, { merge: true });
     } catch (e) {
       // Allowed to ignore devices collection write restriction on cloud rules
     }

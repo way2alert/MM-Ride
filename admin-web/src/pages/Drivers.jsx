@@ -61,13 +61,46 @@ export default function Drivers({ onSelectDriver }) {
         auditAction = 'DRIVER_REJECTED';
       } else if (type === 'SUSPEND') {
         updates.accountStatus = 'SUSPENDED';
+        updates.status = 'SUSPENDED';
         updates.isSuspended = true;
-        updates.suspensionReason = reason;
+        updates.suspensionReason = reason || 'Suspended by fleet operations administrator';
         auditAction = 'DRIVER_SUSPENDED';
+
+        if (driver.boundDeviceId) {
+          await setDoc(doc(db, 'driverDevices', driver.boundDeviceId), {
+            status: 'SUSPENDED',
+            suspensionReason: reason || 'Driver account suspended',
+            policyStatus: 'RESTRICTED',
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
+          await setDoc(doc(db, 'devices', driver.boundDeviceId), {
+            status: 'SUSPENDED',
+            suspensionReason: reason || 'Driver account suspended',
+            policyStatus: 'RESTRICTED',
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
+        }
       } else if (type === 'REACTIVATE') {
         updates.accountStatus = driver.assignedBikeId ? 'ACTIVE_DRIVER' : 'APPROVED_BIKE_NOT_ASSIGNED';
+        updates.status = 'ACTIVE';
         updates.isSuspended = false;
+        updates.suspensionReason = null;
         auditAction = 'DRIVER_REACTIVATED';
+
+        if (driver.boundDeviceId) {
+          await setDoc(doc(db, 'driverDevices', driver.boundDeviceId), {
+            status: 'ACTIVE',
+            suspensionReason: null,
+            policyStatus: 'COMPLIANT',
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
+          await setDoc(doc(db, 'devices', driver.boundDeviceId), {
+            status: 'ACTIVE',
+            suspensionReason: null,
+            policyStatus: 'COMPLIANT',
+            updatedAt: serverTimestamp()
+          }, { merge: true }).catch(() => {});
+        }
       } else if (type === 'CLOSE') {
         updates.accountStatus = 'ACCOUNT_CLOSED';
         auditAction = 'DRIVER_ACCOUNT_CLOSED';

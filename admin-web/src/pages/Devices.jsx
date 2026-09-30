@@ -55,6 +55,9 @@ export default function Devices({ onSelectDriver }) {
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
 
+  // Enrollment Mode: 'NO_RESET' (ADB / App Pinning / In-App) vs 'FACTORY_RESET' (6-Tap QR)
+  const [enrollTab, setEnrollTab] = useState('NO_RESET');
+
   // QR Code Provisioning State
   const [manualWifi, setManualWifi] = useState(true);
   const [depotWifiSsid, setDepotWifiSsid] = useState('');
@@ -485,6 +488,21 @@ export default function Devices({ onSelectDriver }) {
       if (targetDriverId) {
         updates.driverId = targetDriverId;
         updates.assignedDriverId = targetDriverId;
+
+        // Also sync status directly to the driver's profile record
+        const driverStatusUpdate = {
+          updatedAt: serverTimestamp()
+        };
+        if (statusModal.targetStatus === 'SUSPENDED' || statusModal.targetStatus === 'LOST') {
+          driverStatusUpdate.accountStatus = 'SUSPENDED';
+          driverStatusUpdate.isSuspended = true;
+          driverStatusUpdate.suspensionReason = statusModal.reason || `Device marked ${statusModal.targetStatus} by MDM policy`;
+        } else if (statusModal.targetStatus === 'ACTIVE') {
+          driverStatusUpdate.accountStatus = 'ACTIVE_DRIVER';
+          driverStatusUpdate.isSuspended = false;
+          driverStatusUpdate.suspensionReason = null;
+        }
+        await updateDoc(doc(db, 'drivers', targetDriverId), driverStatusUpdate).catch(() => {});
       }
 
       await setDoc(doc(db, 'driverDevices', statusModal.device.id), updates, { merge: true }).catch(() => {});
@@ -1228,131 +1246,214 @@ export default function Devices({ onSelectDriver }) {
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <QrCode size={20} color="#F59E0B" />
-                <span>Android Enterprise 6-Tap QR Provisioning Studio</span>
+                <span>Android Enterprise MDM & Kiosk Provisioning Studio</span>
               </div>
               <button className="btn-icon" onClick={() => setShowQrModal(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-              {/* QR Code Canvas Card */}
-              <div style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                {qrCanvasUrl ? (
-                  <img src={qrCanvasUrl} alt="Provisioning QR Code" style={{ width: '100%', maxWidth: 240, height: 'auto' }} />
-                ) : (
-                  <div style={{ color: '#000000', padding: '2rem' }}>Generating QR...</div>
-                )}
-                <div style={{ color: '#0A0D14', fontWeight: 800, fontSize: '0.78rem', marginTop: 8, textAlign: 'center' }}>
-                  MM RIDE FLEET ENROLLMENT QR
-                </div>
-                <div style={{ color: '#64748B', fontSize: '0.68rem', textAlign: 'center' }}>
-                  AMAPI Device Owner • Auto-Config Wi-Fi & Kiosk
-                </div>
-              </div>
-
-              {/* 6-Tap Setup Instructions & Wi-Fi Configuration */}
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F59E0B', marginBottom: '0.5rem' }}>
-                  Depot Technician Setup Instructions:
-                </div>
-                <ol style={{ fontSize: '0.8rem', color: '#CBD5E1', lineHeight: 1.5, paddingLeft: '1.2rem', margin: '0 0 0.75rem 0' }}>
-                  <li>On the factory-reset <strong>"Hi there / Welcome"</strong> Android screen, <strong>tap blank space 6 times</strong>.</li>
-                  <li>The built-in Android Enterprise QR scanner will open automatically.</li>
-                  <li>Scan the QR code on the left.</li>
-                  <li>{manualWifi ? "Select your home / depot Wi-Fi on the phone's screen and connect." : `Device will auto-connect to ${depotWifiSsid || 'configured Wi-Fi'}.`}</li>
-                  <li>Device enrolls into MM Ride Fleet Management!</li>
-                </ol>
-
-                {/* Wi-Fi Configuration Options */}
-                <div style={{ background: '#0F172A', padding: '0.75rem', borderRadius: 8, border: '1px solid var(--border-subtle)', marginBottom: '0.75rem' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#38BDF8', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Wifi size={14} /> Wi-Fi Connection Setup
-                  </div>
-
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
-                    <input
-                      type="radio"
-                      name="wifiMode"
-                      checked={manualWifi}
-                      onChange={() => setManualWifi(true)}
-                      style={{ marginTop: 2 }}
-                    />
-                    <div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#F8FAFC' }}>
-                        Select Wi-Fi Manually on Phone (Recommended)
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
-                        Prevents "Could not connect wifi" errors. Phone will prompt you to choose any available Wi-Fi or mobile hotspot.
-                      </div>
-                    </div>
-                  </label>
-
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="wifiMode"
-                      checked={!manualWifi}
-                      onChange={() => setManualWifi(false)}
-                      style={{ marginTop: 2 }}
-                    />
-                    <div>
-                      <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#F8FAFC' }}>
-                        Auto-Connect via Wi-Fi Credentials in QR
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
-                        Embed your exact Wi-Fi name & password into the QR code for zero-click Wi-Fi setup.
-                      </div>
-                    </div>
-                  </label>
-
-                  {!manualWifi && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.6rem', padding: '0.5rem', background: '#1E293B', borderRadius: 6 }}>
-                      <div>
-                        <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Your Wi-Fi SSID (Name):</span>
-                        <input
-                          type="text"
-                          className="form-input"
-                          style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                          placeholder="e.g. JioFiber_5G"
-                          value={depotWifiSsid}
-                          onChange={(e) => setDepotWifiSsid(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Wi-Fi Password:</span>
-                        <input
-                          type="text"
-                          className="form-input"
-                          style={{ padding: '4px 8px', fontSize: '0.78rem' }}
-                          placeholder="Password"
-                          value={depotWifiPass}
-                          onChange={(e) => setDepotWifiPass(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Live Troubleshooter Banners */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.72rem', color: '#FCA5A5', lineHeight: 1.4 }}>
-                    <strong>🚨 "Can't set up device / Contact IT Admin" Reason:</strong><br />
-                    Google Android Enterprise verifies the enrollment token with Google servers. Since <code>MM_RIDE_...</code> is a placeholder test token, Google rejects it during 6-tap OS setup.
-                    <div style={{ marginTop: '0.35rem', color: '#FEE2E2', fontWeight: 600 }}>
-                      👉 <strong>Instant Recommended Solution:</strong><br />
-                      1. Phone-la <strong>"Reset"</strong> click panni Welcome screen-ku ponga.<br />
-                      2. 6-tap panna vendaam — normal-ah <strong>"Start"</strong> panni phone home screen-ku poidunga.<br />
-                      3. Phone-la <strong>MM Ride Driver app</strong> open panni login pannunga.<br />
-                      4. Unga real phone hardware ID automatically inga <strong>ACTIVE</strong> nu sync aagidum (Battery, GPS, Kiosk Lockdown & PIN 998877 fully active)!
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.72rem', color: '#FDE68A', lineHeight: 1.4 }}>
-                    <strong>⚡ "Could not connect wifi" problem fix:</strong><br />
-                    Mela <strong>"Select Wi-Fi Manually on Phone"</strong> select panna, phone unga Wi-Fi list-ah open pannum.
-                  </div>
-                </div>
-              </div>
+            {/* Mode Selector Tabs */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setEnrollTab('NO_RESET')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: enrollTab === 'NO_RESET' ? 'var(--accent-amber)' : 'rgba(255, 255, 255, 0.05)',
+                  color: enrollTab === 'NO_RESET' ? '#000' : '#94A3B8',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                ⚡ Set MDM Without Factory Reset (Recommended)
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnrollTab('FACTORY_RESET')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: enrollTab === 'FACTORY_RESET' ? 'var(--accent-amber)' : 'rgba(255, 255, 255, 0.05)',
+                  color: enrollTab === 'FACTORY_RESET' ? '#000' : '#94A3B8',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  cursor: 'pointer'
+                }}
+              >
+                📲 6-Tap QR Setup (Factory-Reset Device)
+              </button>
             </div>
+
+            {/* TAB 1: WITHOUT FACTORY RESET */}
+            {enrollTab === 'NO_RESET' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                {/* Method 1: ADB Device Owner */}
+                <div style={{ background: '#0F172A', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '1rem' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <span>💻 Method 1: Official Android ADB (Permanent Device Owner — No Wipe)</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: '#CBD5E1', lineHeight: 1.4, margin: '0 0 0.6rem 0' }}>
+                    Google allows promoting any company DPC app to permanent <strong>Device Owner</strong> on an active phone via USB debugging:
+                  </p>
+                  <ol style={{ fontSize: '0.75rem', color: '#94A3B8', paddingLeft: '1.2rem', margin: '0 0 0.75rem 0', lineHeight: 1.6 }}>
+                    <li>On phone: Go to <b>Settings → Accounts</b> and temporarily remove Google accounts (re-add after setup).</li>
+                    <li>Go to <b>Settings → About Phone</b> → Tap <b>Build Number 7 times</b> to unlock Developer Options.</li>
+                    <li>In <b>Developer Options</b>, turn ON <b>USB Debugging</b>.</li>
+                    <li>Connect phone to PC with USB cable and run in Terminal:</li>
+                  </ol>
+                  <div style={{ background: '#020617', padding: '0.6rem 0.8rem', borderRadius: 6, fontFamily: 'monospace', fontSize: '0.75rem', color: '#FCD34D', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+                    adb shell dpm set-device-owner com.afwsamples.testdpc/.DeviceAdminReceiver
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#10B981', marginTop: '0.4rem' }}>
+                    ✓ Full kiosk enforcement, camera/USB lock, and policy compliance active without losing a single file!
+                  </div>
+                </div>
+
+                {/* Method 2: Android Built-in Screen Pinning */}
+                <div style={{ background: '#0F172A', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '1rem' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#10B981', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <span>📌 Method 2: Android Built-in App Pinning (No PC, 30 Seconds Setup)</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: '#CBD5E1', lineHeight: 1.4, margin: '0 0 0.6rem 0' }}>
+                    Instantly lock the phone so the driver <strong>cannot exit or switch apps</strong> without entering the phone owner's PIN:
+                  </p>
+                  <ol style={{ fontSize: '0.75rem', color: '#94A3B8', paddingLeft: '1.2rem', margin: '0 0 0.4rem 0', lineHeight: 1.6 }}>
+                    <li>On phone: <b>Settings → Security & Privacy → More Security Settings → App Pinning</b>.</li>
+                    <li>Turn ON <b>App Pinning</b> and check <b>"Ask for PIN before unpinning"</b>.</li>
+                    <li>Open <b>MM Ride Driver App</b> → Open Recent Apps (Swipe up or Recent button).</li>
+                    <li>Tap the <b>MM Ride Icon</b> above the preview card → Select <b>Pin 📌</b>.</li>
+                  </ol>
+                  <div style={{ fontSize: '0.7rem', color: '#38BDF8', marginTop: '0.2rem' }}>
+                    ✓ Driver cannot swipe away, go Home, or open WhatsApp without your Depot PIN!
+                  </div>
+                </div>
+
+                {/* Method 3: In-App Software Telemetry */}
+                <div style={{ background: '#0F172A', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '1rem' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <span>🚀 Method 3: MM Ride In-App Telemetry & Remote Lock (Automatic)</span>
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
+                    Already active! The moment the driver logs in, the hardware Android ID, battery, network, and live GPS transmit to this dashboard. If you click <b>"Suspend / Lock"</b> on this page, the app immediately locks the driver screen with technician exit PIN <code>998877</code>.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: 6-TAP QR CODE STUDIO (FACTORY RESET) */}
+            {enrollTab === 'FACTORY_RESET' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+                {/* QR Code Canvas Card */}
+                <div style={{ background: '#FFFFFF', padding: '1.25rem', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  {qrCanvasUrl ? (
+                    <img src={qrCanvasUrl} alt="Provisioning QR Code" style={{ width: '100%', maxWidth: 240, height: 'auto' }} />
+                  ) : (
+                    <div style={{ color: '#000000', padding: '2rem' }}>Generating QR...</div>
+                  )}
+                  <div style={{ color: '#0A0D14', fontWeight: 800, fontSize: '0.78rem', marginTop: 8, textAlign: 'center' }}>
+                    MM RIDE FLEET ENROLLMENT QR
+                  </div>
+                  <div style={{ color: '#64748B', fontSize: '0.68rem', textAlign: 'center' }}>
+                    AMAPI Device Owner • Auto-Config Wi-Fi & Kiosk
+                  </div>
+                </div>
+
+                {/* 6-Tap Setup Instructions & Wi-Fi Configuration */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#F59E0B', marginBottom: '0.5rem' }}>
+                    Depot Technician Setup Instructions:
+                  </div>
+                  <ol style={{ fontSize: '0.8rem', color: '#CBD5E1', lineHeight: 1.5, paddingLeft: '1.2rem', margin: '0 0 0.75rem 0' }}>
+                    <li>On the factory-reset <strong>"Hi there / Welcome"</strong> Android screen, <strong>tap blank space 6 times</strong>.</li>
+                    <li>The built-in Android Enterprise QR scanner will open automatically.</li>
+                    <li>Scan the QR code on the left.</li>
+                    <li>{manualWifi ? "Select your home / depot Wi-Fi on the phone's screen and connect." : `Device will auto-connect to ${depotWifiSsid || 'configured Wi-Fi'}.`}</li>
+                    <li>Device enrolls into MM Ride Fleet Management!</li>
+                  </ol>
+
+                  {/* Wi-Fi Configuration Options */}
+                  <div style={{ background: '#0F172A', padding: '0.75rem', borderRadius: 8, border: '1px solid var(--border-subtle)', marginBottom: '0.75rem' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#38BDF8', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Wifi size={14} /> Wi-Fi Connection Setup
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
+                      <input
+                        type="radio"
+                        name="wifiMode"
+                        checked={manualWifi}
+                        onChange={() => setManualWifi(true)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#F8FAFC' }}>
+                          Select Wi-Fi Manually on Phone (Recommended)
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                          Prevents "Could not connect wifi" errors. Phone will prompt you to choose any available Wi-Fi or mobile hotspot.
+                        </div>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="wifiMode"
+                        checked={!manualWifi}
+                        onChange={() => setManualWifi(false)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <div>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#F8FAFC' }}>
+                          Auto-Connect via Wi-Fi Credentials in QR
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+                          Embed your exact Wi-Fi name & password into the QR code for zero-click Wi-Fi setup.
+                        </div>
+                      </div>
+                    </label>
+
+                    {!manualWifi && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.6rem', padding: '0.5rem', background: '#1E293B', borderRadius: 6 }}>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Your Wi-Fi SSID (Name):</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                            placeholder="e.g. JioFiber_5G"
+                            value={depotWifiSsid}
+                            onChange={(e) => setDepotWifiSsid(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Wi-Fi Password:</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ padding: '4px 8px', fontSize: '0.78rem' }}
+                            placeholder="Password"
+                            value={depotWifiPass}
+                            onChange={(e) => setDepotWifiPass(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Live Troubleshooter Banners */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.72rem', color: '#FCA5A5', lineHeight: 1.4 }}>
+                      <strong>🚨 "Can't set up device / Contact IT Admin" Reason:</strong><br />
+                      Google Android Enterprise verifies the enrollment token with Google servers. For quick setup without factory reset, switch to the <strong>"Set MDM Without Factory Reset"</strong> tab above!
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <button 

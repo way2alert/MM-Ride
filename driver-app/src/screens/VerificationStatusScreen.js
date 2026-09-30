@@ -18,6 +18,7 @@ export default function VerificationStatusScreen({ navigation }) {
   const isActiveDriver = driverProfile?.accountStatus === 'ACTIVE_DRIVER';
   const isSuspended = driverProfile?.accountStatus === 'SUSPENDED';
   const isRejected = driverProfile?.approvalStatus === 'REJECTED';
+  const isSuccessfullyApproved = isApproved || isActiveDriver || driverProfile?.accountStatus === 'BIKE_ASSIGNED';
 
   const [showConfetti, setShowConfetti] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -144,24 +145,26 @@ export default function VerificationStatusScreen({ navigation }) {
       />
 
       <ScrollView contentContainerStyle={styles.container}>
-        {/* Top Navigation Row: Back to Login / Switch Account */}
-        <View style={styles.topNavRow}>
-          <TouchableOpacity 
-            style={styles.backToLoginBtn} 
-            onPress={() => {
-              Alert.alert(
-                'Go Back to Login',
-                'Do you want to sign out and return to the login screen?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Yes, Go to Login', style: 'destructive', onPress: logout }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.backToLoginText}>← Back to Login / Switch Account</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Top Navigation Row: Back to Login / Switch Account (Only for unapproved applicants) */}
+        {!isSuccessfullyApproved && (
+          <View style={styles.topNavRow}>
+            <TouchableOpacity 
+              style={styles.backToLoginBtn} 
+              onPress={() => {
+                Alert.alert(
+                  'Go Back to Login',
+                  'Do you want to sign out and return to the login screen?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Yes, Go to Login', style: 'destructive', onPress: logout }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.backToLoginText}>← Back to Login / Switch Account</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.header}>
           <Text style={styles.title}>Account Status (Khata Ki Sthiti)</Text>
@@ -421,12 +424,14 @@ export default function VerificationStatusScreen({ navigation }) {
           />
         )}
 
-        <BigButton
-          title="Sign Out / Log Out"
-          onPress={logout}
-          variant="secondary"
-          style={{ marginBottom: 40 }}
-        />
+        {!isSuccessfullyApproved && (
+          <BigButton
+            title="Sign Out / Log Out"
+            onPress={logout}
+            variant="secondary"
+            style={{ marginBottom: 40 }}
+          />
+        )}
       </ScrollView>
     </View>
   );

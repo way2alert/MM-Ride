@@ -129,7 +129,11 @@ export async function startMdmDeviceTelemetry({
   const deviceRef = doc(db, 'driverDevices', deviceId);
 
   try {
-    await setDoc(deviceRef, {
+    const existingSnap = await getDoc(deviceRef).catch(() => null);
+    const existingData = (existingSnap && existingSnap.exists()) ? existingSnap.data() : null;
+    const isRestricted = existingData?.status === 'SUSPENDED' || existingData?.status === 'LOST';
+
+    const syncPayload = {
       id: deviceId,
       deviceId,
       driverId: effectiveDriverId,
@@ -140,9 +144,8 @@ export async function startMdmDeviceTelemetry({
       model: initialMetrics.model,
       osVersion: initialMetrics.osVersion,
       appVersion: initialMetrics.appVersion,
-      status: 'ACTIVE',
       enrollmentStatus: 'ENROLLED',
-      policyStatus: 'COMPLIANT',
+      policyStatus: isRestricted ? 'RESTRICTED' : (existingData?.policyStatus || 'COMPLIANT'),
       isOnline: true,
       lastSync: new Date().toISOString(),
       batteryLevel: initialMetrics.batteryLevel,
@@ -160,7 +163,14 @@ export async function startMdmDeviceTelemetry({
         securityPatch: '2026-08-01'
       },
       updatedAt: serverTimestamp()
-    }, { merge: true });
+    };
+
+    // Only set ACTIVE if not already marked SUSPENDED or LOST by Admin
+    if (!isRestricted) {
+      syncPayload.status = existingData?.status || 'ACTIVE';
+    }
+
+    await setDoc(deviceRef, syncPayload, { merge: true });
   } catch (err) {
     console.warn('Initial device sync warning:', err.message);
   }
