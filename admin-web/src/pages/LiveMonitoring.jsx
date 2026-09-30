@@ -117,6 +117,30 @@ export default function LiveMonitoring({ onSelectDriver }) {
   );
 
   const onDutyCount = approvedDrivers.filter(d => d.isCurrentlyOnDuty || d.currentDutyId).length;
+  const movingCount = driversWithGps.filter(d => (d.lastKnownLocation?.speed || 0) > 0).length;
+  const idleCount = driversWithGps.filter(d => (d.lastKnownLocation?.speed || 0) === 0).length;
+  const overspeedCount = driversWithGps.filter(d => (d.lastKnownLocation?.speed || 0) > speedThreshold).length;
+
+  const offDutyMovingCount = driversWithGps.filter(d => (!d.isCurrentlyOnDuty && !d.currentDutyId) && ((d.lastKnownLocation?.speed || 0) > 5)).length;
+  const offlineCashCount = driversWithGps.filter(d => d.lastPlatformRideEvent?.eventType === 'RIDE_CANCELLED' && ((d.lastKnownLocation?.speed || 0) > 5)).length;
+  const borderBreachCount = driversWithGps.filter(d => {
+    const loc = d.lastKnownLocation;
+    if (!loc?.latitude || !loc?.longitude) return false;
+    const distKm = Math.sqrt(Math.pow((loc.latitude - hubLat) * 111, 2) + Math.pow((loc.longitude - hubLng) * 111, 2));
+    return distKm > 45 || !!d.geofenceBreach;
+  }).length;
+  const accidentStopCount = driversWithGps.filter(d => {
+    const loc = d.lastKnownLocation;
+    const lastPing = loc?.timestamp ? new Date(loc.timestamp).getTime() : 0;
+    const isStill = (loc?.speed || 0) === 0 && ((Date.now() - lastPing) > (3 * 60 * 1000));
+    return !!d.abnormalStopAlert?.active || ((d.isCurrentlyOnDuty || d.currentDutyId) && isStill && ((d.previousRecordedSpeed || 0) > 30));
+  }).length;
+  const phoneOfflineMovingCount = driversWithGps.filter(d => {
+    const loc = d.lastKnownLocation;
+    const lastPing = loc?.timestamp ? new Date(loc.timestamp).getTime() : 0;
+    return (d.isCurrentlyOnDuty || d.currentDutyId) && ((Date.now() - lastPing) > (3 * 60 * 1000)) && ((loc?.speed || 0) > 5);
+  }).length;
+  const ghostPhoneCount = driversWithGps.filter(d => (d.isCurrentlyOnDuty || d.currentDutyId) && (d.bikeLocationDivergenceKm > 1 || ((d.lastKnownLocation?.speed || 0) === 0 && d.assignedBikeMoving))).length;
 
   const filteredMapDrivers = driversWithGps.filter(d => {
     const loc = d.lastKnownLocation;
@@ -549,109 +573,335 @@ export default function LiveMonitoring({ onSelectDriver }) {
         </div>
       )}
 
-      {/* Top Filter Bar */}
+      {/* Top Fleet Telemetry & Filter Card */}
       <div style={{
+        background: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: 14,
+        padding: '0.9rem 1.25rem',
+        marginBottom: '1rem',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0.85rem 1.25rem',
-        background: 'var(--bg-card)',
-        borderRadius: 12,
-        border: '1px solid var(--border-subtle)',
-        marginBottom: '1rem'
+        flexDirection: 'column',
+        gap: '0.75rem',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Activity size={18} color="#F59E0B" />
-            <b style={{ color: '#FFF' }}>Live Fleet GPS:</b>
-            <span className="badge badge-success">{onDutyCount} Active On Duty</span>
-            <span className="badge badge-neutral" style={{ marginLeft: 4 }}>{driversWithGps.length} GPS Enabled</span>
+        {/* Row 1: Fleet Metrics & Sync Status */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          paddingBottom: '0.65rem',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              color: '#F59E0B',
+              fontWeight: 800,
+              fontSize: '0.9rem',
+              letterSpacing: 0.3
+            }}>
+              <Activity size={18} />
+              <span>LIVE FLEET GPS</span>
+            </div>
+
+            <div style={{ height: 16, width: 1, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(16, 185, 129, 0.15)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              color: '#34D399',
+              padding: '3px 10px',
+              borderRadius: 20,
+              fontSize: '0.76rem',
+              fontWeight: 700
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 8px #10B981' }} />
+              {onDutyCount} On Duty
+            </span>
+
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              color: '#38BDF8',
+              padding: '3px 10px',
+              borderRadius: 20,
+              fontSize: '0.76rem',
+              fontWeight: 600
+            }}>
+              📡 {driversWithGps.length} GPS Enabled
+            </span>
+
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              color: '#FCD34D',
+              padding: '3px 10px',
+              borderRadius: 20,
+              fontSize: '0.76rem',
+              fontWeight: 600
+            }}>
+              ⚡ {movingCount} Moving
+            </span>
+
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              background: 'rgba(148, 163, 184, 0.12)',
+              border: '1px solid rgba(148, 163, 184, 0.25)',
+              color: '#94A3B8',
+              padding: '3px 10px',
+              borderRadius: 20,
+              fontSize: '0.76rem',
+              fontWeight: 600
+            }}>
+              ⏸️ {idleCount} Stationary
+            </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span style={{
+              fontSize: '0.74rem',
+              color: '#94A3B8',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block' }} />
+              Real-time Telemetry via Firestore
+            </span>
+          </div>
+        </div>
+
+        {/* Row 2: Categorized Filter Toolbar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+          {/* Subrow A: Core Status Filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, minWidth: 65 }}>
+              Status:
+            </span>
+
             <button
-              className={`btn btn-sm ${filterMode === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'ALL' ? '#F59E0B' : 'rgba(255, 255, 255, 0.05)',
+                color: filterMode === 'ALL' ? '#000' : '#E2E8F0',
+                border: filterMode === 'ALL' ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.12)',
+                fontWeight: filterMode === 'ALL' ? 800 : 500,
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem'
+              }}
               onClick={() => setFilterMode('ALL')}
             >
               All GPS ({driversWithGps.length})
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'DUTY' ? 'btn-primary' : 'btn-secondary'}`}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'DUTY' ? '#10B981' : 'rgba(255, 255, 255, 0.05)',
+                color: filterMode === 'DUTY' ? '#000' : '#E2E8F0',
+                border: filterMode === 'DUTY' ? '1px solid #10B981' : '1px solid rgba(255, 255, 255, 0.12)',
+                fontWeight: filterMode === 'DUTY' ? 800 : 500,
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem'
+              }}
               onClick={() => setFilterMode('DUTY')}
             >
               On Duty ({onDutyCount})
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'MOVING' ? 'btn-primary' : 'btn-secondary'}`}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'MOVING' ? '#F59E0B' : 'rgba(255, 255, 255, 0.05)',
+                color: filterMode === 'MOVING' ? '#000' : '#E2E8F0',
+                border: filterMode === 'MOVING' ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.12)',
+                fontWeight: filterMode === 'MOVING' ? 800 : 500,
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem'
+              }}
               onClick={() => setFilterMode('MOVING')}
             >
-              ⚡ Moving
+              ⚡ Moving ({movingCount})
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'IDLE' ? 'btn-primary' : 'btn-secondary'}`}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'IDLE' ? '#64748B' : 'rgba(255, 255, 255, 0.05)',
+                color: filterMode === 'IDLE' ? '#FFF' : '#E2E8F0',
+                border: filterMode === 'IDLE' ? '1px solid #64748B' : '1px solid rgba(255, 255, 255, 0.12)',
+                fontWeight: filterMode === 'IDLE' ? 800 : 500,
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem'
+              }}
               onClick={() => setFilterMode('IDLE')}
             >
-              ⏸️ Idle / Stopped
+              ⏸️ Idle / Stopped ({idleCount})
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'OVERSPEED' ? 'btn-primary' : 'btn-secondary'}`}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'OVERSPEED' ? '#EF4444' : 'rgba(255, 255, 255, 0.05)',
+                color: filterMode === 'OVERSPEED' ? '#FFF' : overspeedCount > 0 ? '#F87171' : '#CBD5E1',
+                border: filterMode === 'OVERSPEED' ? '1px solid #EF4444' : overspeedCount > 0 ? '1px solid rgba(239, 68, 68, 0.5)' : '1px solid rgba(255, 255, 255, 0.12)',
+                fontWeight: filterMode === 'OVERSPEED' ? 800 : 500,
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem'
+              }}
               onClick={() => setFilterMode('OVERSPEED')}
             >
-              ⚡ Speed Alert (&gt;{speedThreshold} km/h)
+              ⚡ Speed Alert (&gt;{speedThreshold} km/h) {overspeedCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{overspeedCount}</span>}
             </button>
+          </div>
+
+          {/* Subrow B: Threat Radar & Security Exceptions */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.45rem',
+            flexWrap: 'wrap',
+            paddingTop: '0.45rem',
+            borderTop: '1px dashed rgba(255, 255, 255, 0.08)'
+          }}>
+            <span style={{
+              fontSize: '0.72rem',
+              color: '#F87171',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              minWidth: 65,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              <ShieldAlert size={13} /> Threats:
+            </span>
+
             <button
-              className={`btn btn-sm ${filterMode === 'OFF_DUTY_MOVING' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'OFF_DUTY_MOVING' ? '#FFF' : '#FCA5A5' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'OFF_DUTY_MOVING' ? '#EF4444' : offDutyMovingCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'OFF_DUTY_MOVING' ? '#FFF' : offDutyMovingCount > 0 ? '#FCA5A5' : '#CBD5E1',
+                borderColor: filterMode === 'OFF_DUTY_MOVING' ? '#EF4444' : offDutyMovingCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'OFF_DUTY_MOVING' ? 800 : 500
+              }}
               onClick={() => setFilterMode('OFF_DUTY_MOVING')}
-              title="Detect vehicles in motion with Duty OFF (Personal Use Violation)"
+              title="Detect vehicles in motion with Duty OFF (Unauthorized Personal Use)"
             >
-              🚨 Off-Duty Moving
+              🚨 Off-Duty Moving {offDutyMovingCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{offDutyMovingCount}</span>}
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'OFFLINE_CASH' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'OFFLINE_CASH' ? '#FFF' : '#FCA5A5' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'OFFLINE_CASH' ? '#EF4444' : offlineCashCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'OFFLINE_CASH' ? '#FFF' : offlineCashCount > 0 ? '#FCA5A5' : '#CBD5E1',
+                borderColor: filterMode === 'OFFLINE_CASH' ? '#EF4444' : offlineCashCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'OFFLINE_CASH' ? 800 : 500
+              }}
               onClick={() => setFilterMode('OFFLINE_CASH')}
-              title="Detect vehicles moving after platform ride cancellation (Offline Cash Fraud)"
+              title="Detect vehicles moving after platform ride cancellation (Suspected Offline Cash Ride)"
             >
-              🚖 Offline Cash Alert
+              🚖 Offline Cash Alert {offlineCashCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{offlineCashCount}</span>}
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'BORDER_BREACH' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(239, 68, 68, 0.4)', color: filterMode === 'BORDER_BREACH' ? '#FFF' : '#FCA5A5' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'BORDER_BREACH' ? '#EF4444' : borderBreachCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'BORDER_BREACH' ? '#FFF' : borderBreachCount > 0 ? '#FCA5A5' : '#CBD5E1',
+                borderColor: filterMode === 'BORDER_BREACH' ? '#EF4444' : borderBreachCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'BORDER_BREACH' ? 800 : 500
+              }}
               onClick={() => setFilterMode('BORDER_BREACH')}
               title="Detect vehicles outside 45km metropolitan perimeter (Inter-State / Boundary Breach)"
             >
-              🚧 Border Breach
+              🚧 Border Breach {borderBreachCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{borderBreachCount}</span>}
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'ACCIDENT_STOP' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(245, 158, 11, 0.5)', color: filterMode === 'ACCIDENT_STOP' ? '#FFF' : '#FCD34D' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'ACCIDENT_STOP' ? '#F59E0B' : accidentStopCount > 0 ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'ACCIDENT_STOP' ? '#000' : accidentStopCount > 0 ? '#FCD34D' : '#CBD5E1',
+                borderColor: filterMode === 'ACCIDENT_STOP' ? '#F59E0B' : accidentStopCount > 0 ? 'rgba(245, 158, 11, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'ACCIDENT_STOP' ? 800 : 500
+              }}
               onClick={() => setFilterMode('ACCIDENT_STOP')}
               title="Detect sudden deceleration from high speed to 0 km/h with prolonged stationary state (Possible Accident / Breakdown)"
             >
-              ⚠️ Possible Accident / Stop
+              ⚠️ Possible Accident / Stop {accidentStopCount > 0 && <span className="badge badge-warning" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{accidentStopCount}</span>}
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'PHONE_OFFLINE_MOVING' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: filterMode === 'PHONE_OFFLINE_MOVING' ? '#FFF' : '#FCA5A5' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'PHONE_OFFLINE_MOVING' ? '#EF4444' : phoneOfflineMovingCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'PHONE_OFFLINE_MOVING' ? '#FFF' : phoneOfflineMovingCount > 0 ? '#FCA5A5' : '#CBD5E1',
+                borderColor: filterMode === 'PHONE_OFFLINE_MOVING' ? '#EF4444' : phoneOfflineMovingCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'PHONE_OFFLINE_MOVING' ? 800 : 500
+              }}
               onClick={() => setFilterMode('PHONE_OFFLINE_MOVING')}
               title="Detect vehicles moving with driver phone offline / airplane mode (Tampering / Combination A)"
             >
-              🚨 Phone Offline + Moving
+              🚨 Phone Offline + Moving {phoneOfflineMovingCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{phoneOfflineMovingCount}</span>}
             </button>
+
             <button
-              className={`btn btn-sm ${filterMode === 'GHOST_PHONE' ? 'btn-danger' : 'btn-secondary'}`}
-              style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: filterMode === 'GHOST_PHONE' ? '#FFF' : '#FCA5A5' }}
+              className="btn btn-sm"
+              style={{
+                background: filterMode === 'GHOST_PHONE' ? '#EF4444' : ghostPhoneCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                color: filterMode === 'GHOST_PHONE' ? '#FFF' : ghostPhoneCount > 0 ? '#FCA5A5' : '#CBD5E1',
+                borderColor: filterMode === 'GHOST_PHONE' ? '#EF4444' : ghostPhoneCount > 0 ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.1)',
+                borderRadius: 8,
+                padding: '0.35rem 0.75rem',
+                fontSize: '0.78rem',
+                fontWeight: filterMode === 'GHOST_PHONE' ? 800 : 500
+              }}
               onClick={() => setFilterMode('GHOST_PHONE')}
               title="Detect when registered company phone is left at room while bike is moving (Ghost Phone Separation)"
             >
-              📱 Ghost Phone Alert
+              📱 Ghost Phone Alert {ghostPhoneCount > 0 && <span className="badge badge-danger" style={{ marginLeft: 4, padding: '1px 5px', fontSize: 10 }}>{ghostPhoneCount}</span>}
             </button>
           </div>
-        </div>
-
-        <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
-          Real-time GPS updates automatically via Firestore Telemetry
         </div>
       </div>
 
