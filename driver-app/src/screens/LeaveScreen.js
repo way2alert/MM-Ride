@@ -8,7 +8,7 @@ import {
   TouchableOpacity, 
   Alert 
 } from 'react-native';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
 import { submitDriverLeave } from '../firebase/api';
@@ -27,21 +27,20 @@ export default function LeaveScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function loadPastLeaves() {
-      if (!currentUser?.uid) return;
-      try {
-        const snap = await getDocs(
-          query(
-            collection(db, 'leaveRequests'),
-            where('driverId', '==', currentUser.uid)
-          )
-        );
-        setPastLeaves(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (err) {
-        console.warn('Error loading leaves:', err);
-      }
-    }
-    loadPastLeaves();
+    if (!currentUser?.uid) return;
+    const q = query(
+      collection(db, 'leaveRequests'),
+      where('driverId', '==', currentUser.uid)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const leaves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort newest first
+      leaves.sort((a, b) => new Date(b.createdAt?.toDate ? b.createdAt.toDate() : b.createdAt || 0) - new Date(a.createdAt?.toDate ? a.createdAt.toDate() : a.createdAt || 0));
+      setPastLeaves(leaves);
+    }, (err) => {
+      console.warn('Error loading leaves:', err);
+    });
+    return () => unsub();
   }, [currentUser?.uid]);
 
   const handleSubmit = async () => {
@@ -61,14 +60,6 @@ export default function LeaveScreen({ navigation }) {
 
       Alert.alert('Leave Submitted ✅', 'Your leave request has been submitted to Operations for review.');
       setReason('');
-      // Refresh list
-      const snap = await getDocs(
-        query(
-          collection(db, 'leaveRequests'),
-          where('driverId', '==', currentUser.uid)
-        )
-      );
-      setPastLeaves(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       Alert.alert('Error', err.message);
     } finally {
@@ -152,6 +143,11 @@ export default function LeaveScreen({ navigation }) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.leaveDate}>📅 {l.startDate} ({l.durationDays || 1} day)</Text>
                 <Text style={styles.leaveReason}>{l.reason}</Text>
+                {l.adminNotes ? (
+                  <Text style={{ fontSize: 11, color: colors.primary, marginTop: 3 }}>
+                    💬 Admin: {l.adminNotes}
+                  </Text>
+                ) : null}
               </View>
               <Text style={[
                 styles.statusPill,

@@ -25,6 +25,7 @@ export default function Sidebar({ currentTab, setTab }) {
   const { currentUser, userRole, logout } = useAuth();
   const [pendingVerifCount, setPendingVerifCount] = useState(0);
   const [pendingAddressCount, setPendingAddressCount] = useState(0);
+  const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
 
   useEffect(() => {
     const unsubDrivers = onSnapshot(collection(db, 'drivers'), (snap) => {
@@ -54,9 +55,20 @@ export default function Sidebar({ currentTab, setTab }) {
       setPendingAddressCount(addrCount);
     });
 
+    const unsubLeaves = onSnapshot(collection(db, 'leaveRequests'), (snap) => {
+      let lCount = 0;
+      snap.forEach(l => {
+        if (l.data().status === 'PENDING') {
+          lCount++;
+        }
+      });
+      setPendingLeaveCount(lCount);
+    });
+
     return () => {
       unsubDrivers();
       unsubAddresses();
+      unsubLeaves();
     };
   }, []);
 
@@ -75,7 +87,7 @@ export default function Sidebar({ currentTab, setTab }) {
         { id: 'drivers', label: 'Driver Directory', icon: Users },
         { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
         { id: 'address-verif', label: 'Address Verification', icon: Home, badge: pendingAddressCount },
-        { id: 'leave', label: 'Leave Requests', icon: CalendarOff },
+        { id: 'leave', label: 'Leave Requests', icon: CalendarOff, badge: pendingLeaveCount },
       ]
     },
     {
