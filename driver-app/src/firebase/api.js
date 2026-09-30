@@ -638,19 +638,6 @@ export async function submitEmergencyIncident({ driverId, bikeId, type, descript
 }
 
 /**
- * Device Security Binding
- */
-export async function bindDriverDevice(driverId, deviceInfo) {
-  const deviceRef = doc(db, 'driverDevices', `dev_${driverId}`);
-  await setDoc(deviceRef, {
-    driverId,
-    ...deviceInfo,
-    lastActiveAt: new Date().toISOString(),
-    updatedAt: serverTimestamp()
-  }, { merge: true });
-}
-
-/**
  * Auto-assign an available vehicle to approved driver
  */
 export async function autoAssignAvailableBike(driverId, driverName) {
@@ -823,4 +810,49 @@ export async function submitFuelFillEntry({
   });
 
   return fuelDoc.id;
+}
+
+/**
+ * Bind hardware device to driver partner and record in devices & driverDevices
+ */
+export async function bindDriverDevice(driverId, deviceInfo) {
+  try {
+    const devId = deviceInfo.deviceId || 'device_default';
+    
+    // 1. Direct record in devices collection (viewed by Admin Web Portal)
+    const deviceRef = doc(db, 'devices', devId);
+    await setDoc(deviceRef, {
+      id: devId,
+      deviceId: devId,
+      assignedDriverId: driverId || null,
+      status: 'ACTIVE',
+      enrollmentStatus: 'ENROLLED',
+      policyStatus: 'COMPLIANT',
+      isOnline: true,
+      lastSync: new Date().toISOString(),
+      kioskExitPin: '998877',
+      ...deviceInfo,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    // 2. Also record in driverDevices collection
+    const devRef = doc(db, 'driverDevices', devId);
+    await setDoc(devRef, {
+      driverId,
+      ...deviceInfo,
+      lastSeen: new Date().toISOString(),
+      updatedAt: serverTimestamp()
+    }, { merge: true }).catch(() => {});
+
+    // 3. Update driver record if available
+    if (driverId) {
+      await updateDoc(doc(db, 'drivers', driverId), {
+        boundDeviceId: devId,
+        boundDeviceModel: deviceInfo.model || deviceInfo.deviceName || 'Android Device',
+        lastDeviceSync: new Date().toISOString()
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('bindDriverDevice error:', err.message);
+  }
 }

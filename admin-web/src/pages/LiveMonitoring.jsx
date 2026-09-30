@@ -637,11 +637,14 @@ export default function LiveMonitoring({ onSelectDriver }) {
               </div>
 
               <div>
-                <span style={{ color: '#94A3B8' }}>Device Integrity:</span>
+                <span style={{ color: '#94A3B8' }}>Dedicated MDM Terminal:</span>
                 <div>
                   <span className="badge badge-success">
-                    {selectedDriver.boundDeviceId ? `BOUND TO [${selectedDriver.boundDeviceId.slice(-6)}]` : 'GENUINE ANDROID DEVICE'}
+                    {selectedDriver.boundDeviceId ? `BOUND TO [${selectedDriver.boundDeviceId.slice(-8)}]` : 'GENUINE ANDROID DEVICE'}
                   </span>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 3 }}>
+                  🔋 Battery: <b style={{ color: (selectedDriver.deviceBattery || 80) <= 20 ? '#EF4444' : '#10B981' }}>{selectedDriver.deviceBattery || 80}%</b> • 📶 {selectedDriver.deviceNetwork || '5G'} • 🛡️ Kiosk Locked
                 </div>
               </div>
 

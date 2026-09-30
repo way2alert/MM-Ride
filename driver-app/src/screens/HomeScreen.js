@@ -22,7 +22,9 @@ export default function HomeScreen({ navigation }) {
     currentLocation, 
     currentSpeed,
     systemSettings,
-    todayDutyMinutes 
+    todayDutyMinutes,
+    openAppLauncher,
+    openPrivacyNotice
   } = useDriver();
 
   const [todayEarnings, setTodayEarnings] = useState(0);
@@ -217,6 +219,26 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.menuIcon}>📸</Text>
             <Text style={styles.menuTitle}>Submit Income</Text>
             <Text style={styles.menuDesc}>Daily cash / app proof</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, { borderColor: 'rgba(56, 189, 248, 0.4)' }]}
+            onPress={openAppLauncher}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.menuIcon}>📲</Text>
+            <Text style={[styles.menuTitle, { color: '#38BDF8' }]}>Approved Apps</Text>
+            <Text style={styles.menuDesc}>Ola / Uber / Rapido</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.menuItem, { borderColor: 'rgba(16, 185, 129, 0.4)' }]}
+            onPress={openPrivacyNotice}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.menuIcon}>🛡️</Text>
+            <Text style={[styles.menuTitle, { color: '#34D399' }]}>Privacy Charter</Text>
+            <Text style={styles.menuDesc}>Zero personal tracking</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

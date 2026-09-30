@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   MapPin, 
@@ -7,6 +7,7 @@ import {
   Home, 
   Bike, 
   Warehouse, 
+  Smartphone,
   Clock, 
   CircleDollarSign, 
   CalendarOff, 
@@ -50,6 +51,7 @@ export default function Sidebar({ currentTab, setTab }) {
     { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
     { id: 'address-verif', label: 'Address Verification', icon: Home },
     { id: 'bikes', label: 'Fleet Bikes', icon: Bike },
+    { id: 'devices', label: 'Devices (MDM)', icon: Smartphone },
     { id: 'hubs', label: 'Hubs & Depots', icon: Warehouse },
     { id: 'duty-sessions', label: 'Duty Shifts', icon: Clock },
     { id: 'settlements', label: 'Earnings & Settlement', icon: CircleDollarSign },
@@ -72,7 +74,7 @@ export default function Sidebar({ currentTab, setTab }) {
 
       <nav className="sidebar-nav">
         <div className="nav-section-title">Core Operations</div>
-        {navItems.slice(0, 7).map((item) => {
+        {navItems.slice(0, 8).map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
           return (
@@ -102,7 +104,7 @@ export default function Sidebar({ currentTab, setTab }) {
         })}
 
         <div className="nav-section-title">Finance & Controls</div>
-        {navItems.slice(7).map((item) => {
+        {navItems.slice(8).map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
           return (

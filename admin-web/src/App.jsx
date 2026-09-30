@@ -8,6 +8,7 @@ import DriverDetail from './pages/DriverDetail';
 import Verification from './pages/Verification';
 import AddressVerification from './pages/AddressVerification';
 import Bikes from './pages/Bikes';
+import Devices from './pages/Devices';
 import Hubs from './pages/Hubs';
 import LiveMonitoring from './pages/LiveMonitoring';
 import DutySessions from './pages/DutySessions';
@@ -51,6 +52,7 @@ export default function App() {
     'verification': { title: 'Document Verification Queue', subtitle: 'Review and approve submitted KYC documents' },
     'address-verif': { title: 'Address Verification', subtitle: 'Mandatory field inspection and GPS proof records' },
     'bikes': { title: 'Fleet Bike Inventory', subtitle: 'Manage company bikes, assignments, and maintenance logs' },
+    'devices': { title: 'Dedicated Device Fleet & MDM Control', subtitle: 'Android Enterprise QR enrollment, dedicated kiosk mode, battery health, and remote anti-theft lockdown' },
     'hubs': { title: 'Authorized Hubs & Depots', subtitle: 'Authorized shift pickup/return depots with geofence radii' },
     'duty-sessions': { title: 'Duty Shifts & Breaks', subtitle: 'Active duty hours, 12h compliance, and distance telemetry' },
     'settlements': { title: 'Earnings & Daily Settlements', subtitle: '50/50 net splits, 10% reserve holds, and verified payouts' },
@@ -96,6 +98,14 @@ export default function App() {
       {currentTab === 'verification' && <Verification />}
       {currentTab === 'address-verif' && <AddressVerification />}
       {currentTab === 'bikes' && <Bikes />}
+      {currentTab === 'devices' && (
+        <Devices
+          onSelectDriver={(driver) => {
+            setSelectedDriver(driver);
+            setCurrentTab('driver-detail');
+          }}
+        />
+      )}
       {currentTab === 'hubs' && <Hubs />}
       {currentTab === 'duty-sessions' && <DutySessions />}
       {currentTab === 'settlements' && <EarningsSettlement />}

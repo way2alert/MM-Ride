@@ -7,6 +7,9 @@ import * as Application from 'expo-application';
 import { Alert } from 'react-native';
 import { auth, db } from '../firebase/config';
 import { logGpsBreadcrumb, bindDriverDevice } from '../firebase/api';
+import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics } from '../services/deviceMdmService';
+import MdmKioskOverlay from '../components/MdmKioskOverlay';
+import PrivacyNoticeModal from '../components/PrivacyNoticeModal';
 
 const DriverContext = createContext();
 
@@ -26,6 +29,12 @@ export function DriverProvider({ children }) {
   const [todayDutyMinutes, setTodayDutyMinutes] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // MDM Dedicated Device & Kiosk State
+  const [restrictionState, setRestrictionState] = useState(null);
+  const [mdmPolicy, setMdmPolicy] = useState(null);
+  const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
+  const [appLauncherVisible, setAppLauncherVisible] = useState(false);
+
   // 0. Real-time System Settings Listener (Configurable speed limits, duty limits)
   useEffect(() => {
     const unsubSettings = onSnapshot(doc(db, 'settings', 'system'), (snap) => {
@@ -39,26 +48,35 @@ export function DriverProvider({ children }) {
     return unsubSettings;
   }, []);
 
-  // 1. Auth Listener
+  // 1. Auth Listener & Dedicated Device MDM Heartbeat
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (user) {
-        // Register device info
-        const deviceId = Device.osBuildId || Device.modelName || 'device_android_dev';
+        // Register hardware device ID and hardware metrics
+        const hardwareId = await getHardwareDeviceId();
+        const metrics = await getDeviceHardwareMetrics();
         await bindDriverDevice(user.uid, {
-          deviceId,
-          deviceName: Device.deviceName || 'Android Phone',
-          model: Device.modelName || 'Android Device',
+          deviceId: hardwareId,
+          deviceName: `${Device.manufacturer || ''} ${Device.modelName || 'Fleet Phone'}`.trim(),
+          model: `${Device.manufacturer || ''} ${Device.modelName || 'Android Device'}`.trim(),
+          manufacturer: Device.manufacturer || 'Android',
           os: Device.osName || 'Android',
-          osVersion: Device.osVersion || '14',
-          appVersion: Application.nativeApplicationVersion || '1.0.0',
-          isDevice: Device.isDevice
+          osVersion: `${Device.osName || 'Android'} ${Device.osVersion || '14'}`,
+          appVersion: Application.nativeApplicationVersion || '1.0.0-mdm',
+          isDevice: Device.isDevice,
+          batteryLevel: metrics.batteryLevel,
+          isCharging: metrics.isCharging,
+          batteryHealth: metrics.batteryHealth,
+          networkType: metrics.networkType,
+          assignedDriverPhone: user.phoneNumber || null
         });
       } else {
+        stopMdmDeviceTelemetry();
         setDriverProfile(null);
         setAssignedBike(null);
         setActiveDutySession(null);
+        setRestrictionState(null);
       }
       setLoading(false);
     });
@@ -221,7 +239,39 @@ export function DriverProvider({ children }) {
     calculateTodayDuty();
   }, [driverProfile?.id, activeDutySession?.status]);
 
-  const logout = () => signOut(auth);
+  // 5. Dedicated Device MDM Heartbeat & Remote Lockdown Monitor
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let cleanupTelemetry = null;
+    startMdmDeviceTelemetry({
+      driverProfile: driverProfile || {
+        id: currentUser.uid,
+        fullName: 'New Driver Partner (Onboarding)',
+        mobileNumber: currentUser.phoneNumber || null
+      },
+      activeDutySession,
+      currentLocation,
+      currentSpeed,
+      onRemoteRestriction: (restriction) => {
+        setRestrictionState(restriction);
+      },
+      onPolicyUpdate: (policy) => {
+        setMdmPolicy(policy);
+      }
+    }).then(cleanup => {
+      cleanupTelemetry = cleanup;
+    });
+
+    return () => {
+      if (cleanupTelemetry) cleanupTelemetry();
+    };
+  }, [currentUser?.uid, driverProfile?.id, activeDutySession?.id, currentLocation?.latitude, currentLocation?.longitude, currentSpeed]);
+
+  const logout = () => {
+    stopMdmDeviceTelemetry();
+    return signOut(auth);
+  };
 
   return (
     <DriverContext.Provider
@@ -235,9 +285,25 @@ export function DriverProvider({ children }) {
         systemSettings,
         todayDutyMinutes,
         loading,
-        logout
+        logout,
+        // MDM & Privacy Additions
+        mdmPolicy,
+        restrictionState,
+        openPrivacyNotice: () => setPrivacyModalVisible(true),
+        openAppLauncher: () => setAppLauncherVisible(true)
       }}
     >
+      <MdmKioskOverlay
+        restrictionState={restrictionState}
+        mdmPolicy={mdmPolicy}
+        onExitKioskSuccess={() => setRestrictionState(null)}
+        showAppLauncher={appLauncherVisible}
+        setShowAppLauncher={setAppLauncherVisible}
+      />
+      <PrivacyNoticeModal
+        visible={privacyModalVisible}
+        onClose={() => setPrivacyModalVisible(false)}
+      />
       {children}
     </DriverContext.Provider>
   );

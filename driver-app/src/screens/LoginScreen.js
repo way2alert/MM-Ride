@@ -17,6 +17,7 @@ import { auth, db, firebaseConfig } from '../firebase/config';
 import { colors } from '../utils/colors';
 import BigButton from '../components/BigButton';
 import FirebaseRecaptchaModal from '../components/FirebaseRecaptchaModal';
+import { getHardwareDeviceId } from '../services/deviceMdmService';
 
 export default function LoginScreen({ navigation }) {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -154,17 +155,27 @@ export default function LoginScreen({ navigation }) {
       const userCredential = await confirmationResult.confirm(enteredOtp);
       const user = userCredential.user;
       const cleanedPhone = (user.phoneNumber ? user.phoneNumber.replace(/\D/g, '').slice(-10) : '') || phoneNumber.trim().replace(/\D/g, '').slice(-10);
-      // Get unique Android Hardware / Device ID
-      let hardwareId = 'device_company_default';
+      // Get unique Android Hardware / Device ID via MDM service
+      const hardwareId = await getHardwareDeviceId();
+      const deviceModel = `${Device.manufacturer || ''} ${Device.modelName || 'Dedicated Fleet Device'}`.trim();
+
+      // Check if this physical terminal is marked SUSPENDED or LOST by Admin
       try {
-        if (Application.getAndroidId) {
-          const aid = await Application.getAndroidId();
-          if (aid) hardwareId = aid;
+        const terminalSnap = await getDoc(doc(db, 'devices', hardwareId));
+        if (terminalSnap.exists()) {
+          const tData = terminalSnap.data();
+          if (tData.status === 'SUSPENDED' || tData.status === 'LOST') {
+            await auth.signOut();
+            Alert.alert(
+              'Terminal Access Blocked 🚫',
+              `This company terminal is marked [${tData.status}] by Fleet Operations.\n\nReason: ${tData.suspensionReason || tData.lostReason || 'Security audit restriction'}.\n\nPlease report to your depot hub.`
+            );
+            return;
+          }
         }
       } catch (e) {
-        console.warn('Android ID error:', e);
+        console.warn('Device status check warning:', e);
       }
-      const deviceModel = `${Device.manufacturer || ''} ${Device.modelName || 'Android Device'}`.trim();
 
       // 2. Ensure driver profile exists and enforce Device Binding
       const driverRef = doc(db, 'drivers', user.uid);
@@ -173,12 +184,22 @@ export default function LoginScreen({ navigation }) {
       if (driverSnap.exists()) {
         const dData = driverSnap.data();
 
+        // Check if driver account itself is suspended
+        if (dData.accountStatus === 'SUSPENDED' || dData.isSuspended) {
+          await auth.signOut();
+          Alert.alert(
+            'Account Suspended 🛑',
+            `Your MM Ride partner account has been suspended.\n\nReason: ${dData.suspensionReason || 'Operational review pending'}.\n\nPlease contact fleet support.`
+          );
+          return;
+        }
+
         // Enforce Device Binding for approved / active drivers
         if (dData.boundDeviceId && dData.boundDeviceId !== hardwareId) {
           await auth.signOut();
           Alert.alert(
             'Unauthorized Device (அங்கீகரிக்கப்படாத சாதனம்)',
-            `This driver account is bound to Company Device ID [${dData.boundDeviceId.slice(-6)}].\n\nYou cannot log in from an unapproved or personal phone.\n\nஇந்த கணக்கு நிறுவனம் வழங்கிய அதிகாரப்பூர்வ மொபைலில் மட்டுமே இயங்கும். ஓனரை தொடர்பு கொள்ளவும்.`
+            `This driver account is bound to Company Device ID [${dData.boundDeviceId.slice(-8)}].\n\nYou cannot log in from an unapproved or personal phone.\n\nஇந்த கணக்கு நிறுவனம் வழங்கிய அதிகாரப்பூர்வ மொபைலில் மட்டுமே இயங்கும். ஓனரை தொடர்பு கொள்ளவும்.`
           );
           return;
         }

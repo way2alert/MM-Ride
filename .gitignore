@@ -47,3 +47,7 @@ Desktop.ini
 # IDE Files
 .vscode/
 .idea/
+
+# Binaries & Tooling
+*.exe
+
