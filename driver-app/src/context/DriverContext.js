@@ -7,7 +7,7 @@ import * as Application from 'expo-application';
 import { Alert } from 'react-native';
 import { auth, db } from '../firebase/config';
 import { logGpsBreadcrumb, bindDriverDevice } from '../firebase/api';
-import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics } from '../services/deviceMdmService';
+import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics, updateMdmTelemetryLocation } from '../services/deviceMdmService';
 import MdmKioskOverlay from '../components/MdmKioskOverlay';
 import PrivacyNoticeModal from '../components/PrivacyNoticeModal';
 
@@ -182,6 +182,7 @@ export function DriverProvider({ children }) {
             const speedKmh = Math.max(0, Math.round((loc.coords.speed || 0) * 3.6));
             setCurrentLocation(coords);
             setCurrentSpeed(speedKmh);
+            updateMdmTelemetryLocation(coords, speedKmh);
 
             // Log breadcrumb to Firestore every 30 seconds if on active duty
             if (driverProfile?.id && activeDutySession?.id && activeDutySession.status === 'ACTIVE') {
@@ -266,7 +267,7 @@ export function DriverProvider({ children }) {
     return () => {
       if (cleanupTelemetry) cleanupTelemetry();
     };
-  }, [currentUser?.uid, driverProfile?.id, activeDutySession?.id, currentLocation?.latitude, currentLocation?.longitude, currentSpeed]);
+  }, [currentUser?.uid, driverProfile?.id, activeDutySession?.id]);
 
   const logout = () => {
     stopMdmDeviceTelemetry();

@@ -19,12 +19,19 @@ import * as Device from 'expo-device';
 import * as Battery from 'expo-battery';
 import * as Network from 'expo-network';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
 
 let cachedDeviceId = null;
 let heartbeatInterval = null;
 let deviceSnapshotUnsub = null;
 let policySnapshotUnsub = null;
+let latestLocation = null;
+let latestSpeed = 0;
+
+export function updateMdmTelemetryLocation(loc, speed) {
+  if (loc) latestLocation = loc;
+  if (speed !== undefined) latestSpeed = speed;
+}
 
 /**
  * Retrieve unique hardware Android ID or persistent terminal ID
@@ -115,60 +122,45 @@ export async function startMdmDeviceTelemetry({
   onPolicyUpdate
 }) {
   const deviceId = await getHardwareDeviceId();
+  const effectiveDriverId = driverProfile?.id || auth.currentUser?.uid || null;
 
   // 1. Initial Device Registration / Sync (driverDevices collection)
   const initialMetrics = await getDeviceHardwareMetrics();
   const deviceRef = doc(db, 'driverDevices', deviceId);
 
   try {
-    const snap = await getDoc(deviceRef);
-    if (!snap.exists()) {
-      await setDoc(deviceRef, {
-        id: deviceId,
-        deviceId,
-        model: initialMetrics.model,
-        osVersion: initialMetrics.osVersion,
-        appVersion: initialMetrics.appVersion,
-        assignedDriverId: driverProfile?.id || null,
-        assignedDriverName: driverProfile?.fullName || null,
-        assignedDriverPhone: driverProfile?.mobileNumber || null,
-        assignedBikeId: driverProfile?.assignedBikeId || null,
-        status: 'ACTIVE',
-        enrollmentStatus: 'ENROLLED',
-        policyStatus: 'COMPLIANT',
-        isOnline: true,
-        lastSync: new Date().toISOString(),
-        batteryLevel: initialMetrics.batteryLevel,
-        isCharging: initialMetrics.isCharging,
-        batteryHealth: initialMetrics.batteryHealth,
-        networkType: initialMetrics.networkType,
-        dutyStatus: activeDutySession ? 'ON_DUTY' : 'OFF_DUTY',
-        currentDutyId: activeDutySession?.id || null,
-        kioskExitPin: '998877',
-        health: {
-          memoryUsageMb: 1200,
-          totalMemoryMb: 4096,
-          storageFreeGb: 32.0,
-          isRooted: false,
-          securityPatch: '2026-08-01'
-        },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-    } else {
-      await updateDoc(deviceRef, {
-        isOnline: true,
-        lastSync: new Date().toISOString(),
-        batteryLevel: initialMetrics.batteryLevel,
-        isCharging: initialMetrics.isCharging,
-        networkType: initialMetrics.networkType,
-        dutyStatus: activeDutySession ? 'ON_DUTY' : 'OFF_DUTY',
-        currentDutyId: activeDutySession?.id || null,
-        assignedDriverId: driverProfile?.id || snap.data().assignedDriverId || null,
-        assignedDriverName: driverProfile?.fullName || snap.data().assignedDriverName || null,
-        updatedAt: serverTimestamp()
-      });
-    }
+    await setDoc(deviceRef, {
+      id: deviceId,
+      deviceId,
+      driverId: effectiveDriverId,
+      assignedDriverId: effectiveDriverId,
+      assignedDriverName: driverProfile?.fullName || null,
+      assignedDriverPhone: driverProfile?.mobileNumber || null,
+      assignedBikeId: driverProfile?.assignedBikeId || null,
+      model: initialMetrics.model,
+      osVersion: initialMetrics.osVersion,
+      appVersion: initialMetrics.appVersion,
+      status: 'ACTIVE',
+      enrollmentStatus: 'ENROLLED',
+      policyStatus: 'COMPLIANT',
+      isOnline: true,
+      lastSync: new Date().toISOString(),
+      batteryLevel: initialMetrics.batteryLevel,
+      isCharging: initialMetrics.isCharging,
+      batteryHealth: initialMetrics.batteryHealth,
+      networkType: initialMetrics.networkType,
+      dutyStatus: activeDutySession ? 'ON_DUTY' : 'OFF_DUTY',
+      currentDutyId: activeDutySession?.id || null,
+      kioskExitPin: '998877',
+      health: {
+        memoryUsageMb: 1200,
+        totalMemoryMb: 4096,
+        storageFreeGb: 32.0,
+        isRooted: false,
+        securityPatch: '2026-08-01'
+      },
+      updatedAt: serverTimestamp()
+    }, { merge: true });
   } catch (err) {
     console.warn('Initial device sync warning:', err.message);
   }
@@ -214,6 +206,8 @@ export async function startMdmDeviceTelemetry({
     try {
       const metrics = await getDeviceHardwareMetrics();
       const updatePayload = {
+        driverId: effectiveDriverId,
+        assignedDriverId: effectiveDriverId,
         isOnline: true,
         lastSync: new Date().toISOString(),
         batteryLevel: metrics.batteryLevel,
@@ -224,11 +218,14 @@ export async function startMdmDeviceTelemetry({
         updatedAt: serverTimestamp()
       };
 
-      if (currentLocation?.latitude && currentLocation?.longitude) {
+      const activeLoc = latestLocation || currentLocation;
+      const activeSpeed = latestSpeed !== undefined ? latestSpeed : (currentSpeed || 0);
+
+      if (activeLoc?.latitude && activeLoc?.longitude) {
         updatePayload.lastGps = {
-          latitude: currentLocation.latitude,
-          longitude: currentLocation.longitude,
-          speed: currentSpeed || 0,
+          latitude: activeLoc.latitude,
+          longitude: activeLoc.longitude,
+          speed: activeSpeed,
           timestamp: new Date().toISOString()
         };
       }

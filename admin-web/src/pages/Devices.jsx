@@ -295,33 +295,49 @@ export default function Devices({ onSelectDriver }) {
     }
   ];
 
-  // 1. Live Firestore Listener for Fleet Devices (driverDevices collection)
+  // 1. Live Firestore Listener for Fleet Devices & Drivers
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'driverDevices'), (snapshot) => {
+    let driversMap = {};
+    const unsubDrivers = onSnapshot(collection(db, 'drivers'), (dSnap) => {
+      dSnap.forEach(dDoc => {
+        driversMap[dDoc.id] = dDoc.data();
+      });
+    }, (err) => {
+      console.warn('Drivers fetch warning:', err);
+    });
+
+    const unsubDevices = onSnapshot(collection(db, 'driverDevices'), (snapshot) => {
       const list = [];
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
+        const driverId = data.driverId || data.assignedDriverId;
+        const driverInfo = driverId ? driversMap[driverId] : null;
+
+        const effectiveSync = data.lastSync || data.lastActiveAt || data.lastSeen || (data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : null) || new Date().toISOString();
+        const diffMs = Date.now() - new Date(effectiveSync).getTime();
+        const isOnline = data.isOnline !== undefined ? (data.isOnline && diffMs < 10 * 60 * 1000) : (diffMs < 5 * 60 * 1000);
+
         list.push({
           id: docSnap.id,
           deviceId: docSnap.id,
-          model: data.model || data.deviceName || 'Android Fleet Device',
-          manufacturer: data.manufacturer || data.deviceName?.split(' ')[0] || 'Xiaomi / Android',
+          model: (data.deviceName?.includes('23124RN87I') || data.model?.includes('23124RN87I')) ? 'Xiaomi Redmi 13C 5G' : (data.deviceName || data.model || 'Android Fleet Device'),
+          manufacturer: data.manufacturer || data.deviceName?.split(' ')[0] || 'Android',
           osVersion: data.osVersion ? `Android ${data.osVersion}` : (data.os || 'Android 12+'),
           appVersion: data.appVersion || 'v1.0.0-mdm',
           status: data.status || 'ACTIVE',
           enrollmentStatus: data.enrollmentStatus || 'ENROLLED',
           policyStatus: data.policyStatus || 'COMPLIANT',
-          isOnline: data.isOnline !== undefined ? data.isOnline : (Date.now() - new Date(data.lastSeen || data.lastSync || 0).getTime() < 5 * 60 * 1000),
-          lastSync: data.lastSeen || data.lastSync || new Date().toISOString(),
+          isOnline,
+          lastSync: effectiveSync,
           batteryLevel: data.batteryLevel !== undefined ? data.batteryLevel : 85,
           isCharging: !!data.isCharging,
           batteryHealth: data.batteryHealth || 'GOOD',
           networkType: data.networkType || 'WIFI',
           networkCarrier: data.networkCarrier || 'Airtel / Jio 4G',
           dutyStatus: data.dutyStatus || 'OFF_DUTY',
-          assignedDriverId: data.driverId || data.assignedDriverId || null,
-          assignedDriverName: data.assignedDriverName || 'Manivel',
-          assignedDriverPhone: data.assignedDriverPhone || '+91 7200723901',
+          assignedDriverId: driverId || null,
+          assignedDriverName: driverInfo?.fullName || data.assignedDriverName || 'Driver Partner',
+          assignedDriverPhone: driverInfo?.mobileNumber || driverInfo?.authPhone || data.assignedDriverPhone || 'N/A',
           kioskExitPin: data.kioskExitPin || '998877',
           ...data
         });
@@ -335,7 +351,10 @@ export default function Devices({ onSelectDriver }) {
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      unsubDrivers();
+      unsubDevices();
+    };
   }, []);
 
   // Clear Mock Devices to keep table clean for real physical devices
@@ -350,6 +369,18 @@ export default function Devices({ onSelectDriver }) {
       alert('Mock devices cleared successfully! Waiting for your physical phone enrollment.');
     } catch (e) {
       alert(`Could not clear demo devices: ${e.message}`);
+    }
+  };
+
+  // Delete individual device record
+  const handleDeleteDevice = async (device) => {
+    if (!confirm(`Are you sure you want to remove ${device.model || device.id} (${device.id}) from the fleet list?`)) return;
+    try {
+      await deleteDoc(doc(db, 'driverDevices', device.id));
+      await deleteDoc(doc(db, 'devices', device.id)).catch(() => {});
+      setDevices(prev => prev.filter(d => d.id !== device.id));
+    } catch (e) {
+      alert(`Could not remove device: ${e.message}`);
     }
   };
 
@@ -450,8 +481,14 @@ export default function Devices({ onSelectDriver }) {
         updates.remoteCommands = { lockScreen: false, alarm: false, message: '' };
       }
 
-      await updateDoc(doc(db, 'driverDevices', statusModal.device.id), updates).catch(() => {});
-      await updateDoc(doc(db, 'devices', statusModal.device.id), updates).catch(() => {});
+      const targetDriverId = statusModal.device.driverId || statusModal.device.assignedDriverId || null;
+      if (targetDriverId) {
+        updates.driverId = targetDriverId;
+        updates.assignedDriverId = targetDriverId;
+      }
+
+      await setDoc(doc(db, 'driverDevices', statusModal.device.id), updates, { merge: true }).catch(() => {});
+      await setDoc(doc(db, 'devices', statusModal.device.id), updates, { merge: true }).catch(() => {});
 
       // Audit log
       await setDoc(doc(collection(db, 'auditLogs')), {
@@ -852,11 +889,16 @@ export default function Devices({ onSelectDriver }) {
 
                       {/* Device & Model */}
                       <td>
-                        <div style={{ fontWeight: 700, color: '#F8FAFC', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <code>{d.id}</code>
+                        <div style={{ fontWeight: 700, color: '#F8FAFC', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span>{d.deviceName || d.model}</span>
                         </div>
-                        <div style={{ fontSize: '0.76rem', color: '#94A3B8' }}>{d.model}</div>
-                        <div style={{ fontSize: '0.68rem', color: '#64748B' }}>IMEI: {d.imei?.slice(-6) ? `...${d.imei.slice(-6)}` : 'N/A'} • {d.osVersion || 'Android 14'}</div>
+                        <div style={{ fontSize: '0.72rem', color: '#38BDF8', fontFamily: 'monospace', marginTop: 1 }}>
+                          {d.id}
+                        </div>
+                        <div style={{ fontSize: '0.68rem', color: '#64748B', marginTop: 1 }}>
+                          {d.model && d.deviceName && d.model !== d.deviceName ? `Hardware: ${d.model} • ` : ''}
+                          {d.osVersion || 'Android'}
+                        </div>
                       </td>
 
                       {/* Assigned Driver */}
@@ -976,6 +1018,15 @@ export default function Devices({ onSelectDriver }) {
                             })}
                           >
                             {d.status === 'ACTIVE' ? 'Suspend / Lock' : 'Reactivate'}
+                          </button>
+
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: '0.75rem', padding: '4px 6px', color: '#EF4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                            onClick={() => handleDeleteDevice(d)}
+                            title="Remove device from fleet"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>

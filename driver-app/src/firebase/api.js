@@ -818,35 +818,45 @@ export async function submitFuelFillEntry({
 export async function bindDriverDevice(driverId, deviceInfo) {
   try {
     const devId = deviceInfo.deviceId || 'device_default';
+    const effectiveDriverId = driverId || auth.currentUser?.uid || null;
     
-    // 1. Direct record in devices collection (viewed by Admin Web Portal)
-    const deviceRef = doc(db, 'devices', devId);
-    await setDoc(deviceRef, {
-      id: devId,
-      deviceId: devId,
-      assignedDriverId: driverId || null,
-      status: 'ACTIVE',
-      enrollmentStatus: 'ENROLLED',
-      policyStatus: 'COMPLIANT',
-      isOnline: true,
-      lastSync: new Date().toISOString(),
-      kioskExitPin: '998877',
-      ...deviceInfo,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
-
-    // 2. Also record in driverDevices collection
+    // 1. Record in driverDevices collection (permitted for driver partner with driverId match)
     const devRef = doc(db, 'driverDevices', devId);
     await setDoc(devRef, {
-      driverId,
+      id: devId,
+      deviceId: devId,
+      driverId: effectiveDriverId,
+      assignedDriverId: effectiveDriverId,
       ...deviceInfo,
       lastSeen: new Date().toISOString(),
+      lastSync: new Date().toISOString(),
       updatedAt: serverTimestamp()
-    }, { merge: true }).catch(() => {});
+    }, { merge: true }).catch(err => console.warn('driverDevices sync warning:', err.message));
+
+    // 2. Mirror record in devices collection if allowed (fails gracefully if restricted)
+    try {
+      const deviceRef = doc(db, 'devices', devId);
+      await setDoc(deviceRef, {
+        id: devId,
+        deviceId: devId,
+        driverId: effectiveDriverId,
+        assignedDriverId: effectiveDriverId,
+        status: 'ACTIVE',
+        enrollmentStatus: 'ENROLLED',
+        policyStatus: 'COMPLIANT',
+        isOnline: true,
+        lastSync: new Date().toISOString(),
+        kioskExitPin: '998877',
+        ...deviceInfo,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (e) {
+      // Allowed to ignore devices collection write restriction on cloud rules
+    }
 
     // 3. Update driver record if available
-    if (driverId) {
-      await updateDoc(doc(db, 'drivers', driverId), {
+    if (effectiveDriverId) {
+      await updateDoc(doc(db, 'drivers', effectiveDriverId), {
         boundDeviceId: devId,
         boundDeviceModel: deviceInfo.model || deviceInfo.deviceName || 'Android Device',
         lastDeviceSync: new Date().toISOString()
