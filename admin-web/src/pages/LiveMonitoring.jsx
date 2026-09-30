@@ -12,7 +12,10 @@ import {
   ExternalLink,
   Camera,
   ShieldAlert,
-  Power
+  Power,
+  CheckCircle2,
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import LiveMap from '../components/LiveMap';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
@@ -26,6 +29,8 @@ export default function LiveMonitoring({ onSelectDriver }) {
   const [hubs, setHubs] = useState([]);
   const [dutySessions, setDutySessions] = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(null);
+  const [actionLoading, setActionLoading] = useState(null); // 'SELFIE' | 'ENGINE' | 'DOSSIER'
+  const [actionFeedback, setActionFeedback] = useState(null); // { type, title, message, actionButton }
   const [filterMode, setFilterMode] = useState('ALL'); // ALL, DUTY, MOVING, IDLE, OVERSPEED
   const [speedThreshold, setSpeedThreshold] = useState(60);
 
@@ -144,7 +149,13 @@ export default function LiveMonitoring({ onSelectDriver }) {
     return true; // 'ALL'
   });
 
+  const activeSelectedDriver = selectedDriver 
+    ? (mergedDrivers.find(d => d.id === selectedDriver.id) || selectedDriver)
+    : null;
+
   const handleTriggerLiveSelfieChallenge = async (driver) => {
+    if (!driver?.id) return;
+    setActionLoading('SELFIE');
     try {
       await updateDoc(doc(db, 'drivers', driver.id), {
         pendingVerification: {
@@ -157,15 +168,26 @@ export default function LiveMonitoring({ onSelectDriver }) {
       await logAdminAudit({
         driverId: driver.id,
         action: 'LIVE_FACE_CHALLENGE_DISPATCHED',
-        notes: `Owner dispatched real-time live face selfie challenge with 90s countdown to driver ${driver.fullName}.`
+        notes: `Owner dispatched real-time live face selfie challenge with 90s countdown to driver ${driver.fullName || 'driver'}.`
       });
-      alert(`📸 Live Face Selfie Challenge dispatched to ${driver.fullName || 'driver'}! They have 90s to submit on their mobile screen.`);
+      setActionFeedback({
+        type: 'warning',
+        title: '📸 Live Selfie Challenge Dispatched!',
+        message: `Prompt sent to ${driver.fullName || 'driver'}'s mobile phone! 90-second countdown with front-camera selfie prompt is now active on the driver app.`
+      });
     } catch (e) {
-      alert(`Error triggering challenge: ${e.message}`);
+      setActionFeedback({
+        type: 'danger',
+        title: 'Challenge Dispatch Failed',
+        message: e.message
+      });
+    } finally {
+      setActionLoading(null);
     }
   };
 
   const handleToggleEngineImmobilizer = async (driver) => {
+    if (!driver?.id) return;
     const isCurrentlyImmobilized = !!driver.engineImmobilized;
     const bikeId = driver.assignedBikeId;
     const bikeReg = driver.assignedBikeRegistration || 'assigned bike';
@@ -174,6 +196,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
       if (!window.confirm(`⚠️ CUT-OFF ENGINE IGNITION: Are you sure you want to cut off engine ignition for vehicle ${bikeReg}? The bike will immediately be immobilized and cannot be started.`)) {
         return;
       }
+      setActionLoading('ENGINE');
       try {
         await updateDoc(doc(db, 'drivers', driver.id), {
           engineImmobilized: true,
@@ -191,14 +214,25 @@ export default function LiveMonitoring({ onSelectDriver }) {
           relevantRecordId: bikeId,
           notes: `Emergency ignition cut-off relay activated for bike ${bikeReg}.`
         });
-        alert(`⚡ ENGINE IMMOBILIZED: Vehicle ${bikeReg} ignition has been cut off.`);
+        setActionFeedback({
+          type: 'danger',
+          title: '⚡ ENGINE IMMOBILIZED (IGNITION CUT OFF)',
+          message: `Vehicle ${bikeReg} ignition cut off successfully. Driver app screen is locked down with emergency instructions.`
+        });
       } catch (e) {
-        alert(`Error immobilizing engine: ${e.message}`);
+        setActionFeedback({
+          type: 'danger',
+          title: 'Immobilize Failed',
+          message: e.message
+        });
+      } finally {
+        setActionLoading(null);
       }
     } else {
       if (!window.confirm(`RESTORE IGNITION: Restore engine ignition for vehicle ${bikeReg}?`)) {
         return;
       }
+      setActionLoading('ENGINE');
       try {
         await updateDoc(doc(db, 'drivers', driver.id), {
           engineImmobilized: false
@@ -215,9 +249,19 @@ export default function LiveMonitoring({ onSelectDriver }) {
           relevantRecordId: bikeId,
           notes: `Vehicle ignition restored for bike ${bikeReg}.`
         });
-        alert(`🟢 ENGINE RESTORED: Vehicle ${bikeReg} ignition is enabled.`);
+        setActionFeedback({
+          type: 'success',
+          title: '🟢 ENGINE IGNITION RESTORED',
+          message: `Ignition restored for ${bikeReg}. Driver mobile app lock is released and vehicle can be started.`
+        });
       } catch (e) {
-        alert(`Error restoring engine: ${e.message}`);
+        setActionFeedback({
+          type: 'danger',
+          title: 'Ignition Restore Failed',
+          message: e.message
+        });
+      } finally {
+        setActionLoading(null);
       }
     }
   };
@@ -338,6 +382,8 @@ export default function LiveMonitoring({ onSelectDriver }) {
 
   // Generate 1-Click Police Criminal Breach Dossier
   const handleExportPoliceDossier = (driver) => {
+    if (!driver) return;
+    setActionLoading('DOSSIER');
     const loc = driver.lastKnownLocation;
     const nowStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const regNo = driver.assignedBikeRegistration || 'TN 01 AB 1234';
@@ -346,89 +392,121 @@ export default function LiveMonitoring({ onSelectDriver }) {
     const dlNumber = driver.dlNumber || 'N/A';
     const address = driver.permanentAddress || driver.currentAddress || 'As per Aadhaar KYC';
 
-    const dossierWindow = window.open('', '_blank');
-    if (!dossierWindow) {
-      alert('Pop-up blocked. Please allow pop-ups to generate the Police Evidence Dossier.');
-      return;
+    try {
+      const dossierWindow = window.open('', '_blank');
+      if (!dossierWindow) {
+        setActionFeedback({
+          type: 'warning',
+          title: '⚠️ Pop-Up Blocked by Browser',
+          message: 'Your browser blocked opening the dossier tab. Please allow popups for this site, or click the button below:',
+          actionButton: {
+            label: 'Open Dossier Tab 📄',
+            onClick: () => handleExportPoliceDossier(driver)
+          }
+        });
+        setActionLoading(null);
+        return;
+      }
+
+      dossierWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>MM RIDE - Police Evidence Dossier (${regNo})</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 2rem; color: #1e293b; line-height: 1.5; }
+            .header { border-bottom: 3px solid #dc2626; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+            .stamp { display: inline-block; background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 4px; font-weight: 800; font-size: 12px; }
+            h1 { color: #b91c1c; font-size: 20px; margin: 8px 0 4px 0; text-transform: uppercase; }
+            .sub { color: #64748b; font-size: 13px; margin: 0; }
+            .table-box { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+            .table-box th, .table-box td { border: 1px solid #cbd5e1; padding: 8px 12px; font-size: 13px; text-align: left; }
+            .table-box th { background: #f1f5f9; width: 30%; color: #334155; }
+            .alert-box { background: #fff1f2; border-left: 4px solid #e11d48; padding: 12px; margin: 1rem 0; font-size: 13px; color: #881337; }
+            .sig-row { display: flex; justify-content: space-between; margin-top: 3rem; }
+            .sig-box { border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 4px; font-size: 12px; }
+            @media print { body { padding: 0; } button { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <span class="stamp">CONFIDENTIAL / LAW ENFORCEMENT EXHIBIT</span>
+            <h1>CRIMINAL BREACH OF TRUST & VEHICLE RECOVERY DOSSIER</h1>
+            <p class="sub">Generated by MM Ride Fleet Management System under Section 316 BNS / Section 406 IPC</p>
+            <p style="font-size: 12px; color: #475569; margin-top: 4px;">Dossier Generation Timestamp: <b>${nowStr}</b></p>
+          </div>
+
+          <div class="alert-box">
+            <b>CRIMINAL INCIDENT SUMMARY:</b> Commercial vehicle <b>${regNo}</b> was handed over to the custody-holder for authorized bike-taxi shifts only under signed bailment. Custody-holder has ceased authorized contact, violated operating geofences, and failed to return vehicle to the designated depot.
+          </div>
+
+          <h3>1. Commercial Vehicle Details</h3>
+          <table class="table-box">
+            <tr><th>Vehicle Registration No.</th><td><b>${regNo}</b></td></tr>
+            <tr><th>Vehicle Ownership</th><td>MM Ride Commercial Fleet Partner</td></tr>
+            <tr><th>Original RC Status</th><td>Retained at Depot (Driver holds only verified attested copy)</td></tr>
+            <tr><th>Tracker Serial & Status</th><td>4G Relay Tracker Active (Ignition Remote Cut Compatible)</td></tr>
+          </table>
+
+          <h3>2. Custody Holder / Driver Details</h3>
+          <table class="table-box">
+            <tr><th>Full Legal Name</th><td><b>${driverName}</b></td></tr>
+            <tr><th>Driving Licence (DL) No.</th><td>${dlNumber}</td></tr>
+            <tr><th>Primary Mobile Number</th><td>${phone}</td></tr>
+            <tr><th>Residential Address</th><td>${address}</td></tr>
+            <tr><th>Legal Agreement Signed</th><td>Yes (Electronic Bailment & Anti-Fraud Custody Declaration)</td></tr>
+          </table>
+
+          <h3>3. Real-Time Telemetry & Last Known Coordinates</h3>
+          <table class="table-box">
+            <tr><th>Last Known Latitude</th><td>${loc?.latitude || 'N/A'}</td></tr>
+            <tr><th>Last Known Longitude</th><td>${loc?.longitude || 'N/A'}</td></tr>
+            <tr><th>Last Recorded Speed</th><td>${loc?.speed || 0} km/h</td></tr>
+            <tr><th>Last Transmission Time</th><td>${loc?.timestamp ? new Date(loc.timestamp).toLocaleString('en-IN') : 'N/A'}</td></tr>
+            <tr><th>Google Maps Live Location</th><td><a href="https://maps.google.com/?q=${loc?.latitude},${loc?.longitude}" target="_blank">View Last Known Coordinate on Google Maps</a></td></tr>
+          </table>
+
+          <h3>4. Legal Grounding</h3>
+          <p style="font-size: 12px; color: #334155; line-height: 1.6;">
+            This incident constitutes a prima facie case of <b>Criminal Breach of Trust (Section 316 Bharatiya Nyaya Sanhita, 2023 / Section 406 Indian Penal Code)</b> and <b>Dishonest Misappropriation of Property</b>. The custody-holder has no legal title or right to retain, alienate, transfer, or pawn the vehicle. Local law enforcement is requested to intercept the vehicle and take custody immediately.
+          </p>
+
+          <div class="sig-row">
+            <div class="sig-box">Fleet Security Manager (Sign & Seal)</div>
+            <div class="sig-box">Receiving Police Station / Officer</div>
+          </div>
+
+          <div style="margin-top: 2rem; text-align: center;">
+            <button onclick="window.print()" style="background: #b91c1c; color: #fff; padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">
+              🖨️ Print / Save as PDF Dossier
+            </button>
+          </div>
+        </body>
+        </html>
+      `);
+      dossierWindow.document.close();
+      try {
+        dossierWindow.focus();
+      } catch (_) {}
+
+      setActionFeedback({
+        type: 'info',
+        title: '📄 Police FIR Dossier Generated',
+        message: `Recovery dossier generated for vehicle ${regNo} (Driver: ${driverName}). New browser tab opened and ready to print or save as PDF.`,
+        actionButton: {
+          label: 'Re-Open / Print Dossier 🖨️',
+          onClick: () => handleExportPoliceDossier(driver)
+        }
+      });
+    } catch (err) {
+      setActionFeedback({
+        type: 'danger',
+        title: 'Dossier Generation Error',
+        message: err.message
+      });
+    } finally {
+      setActionLoading(null);
     }
-
-    dossierWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>MM RIDE - Police Evidence Dossier (${regNo})</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 2rem; color: #1e293b; line-height: 1.5; }
-          .header { border-bottom: 3px solid #dc2626; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-          .stamp { display: inline-block; background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 4px; font-weight: 800; font-size: 12px; }
-          h1 { color: #b91c1c; font-size: 20px; margin: 8px 0 4px 0; text-transform: uppercase; }
-          .sub { color: #64748b; font-size: 13px; margin: 0; }
-          .table-box { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-          .table-box th, .table-box td { border: 1px solid #cbd5e1; padding: 8px 12px; font-size: 13px; text-align: left; }
-          .table-box th { background: #f1f5f9; width: 30%; color: #334155; }
-          .alert-box { background: #fff1f2; border-left: 4px solid #e11d48; padding: 12px; margin: 1rem 0; font-size: 13px; color: #881337; }
-          .sig-row { display: flex; justify-content: space-between; margin-top: 3rem; }
-          .sig-box { border-top: 1px solid #000; width: 220px; text-align: center; padding-top: 4px; font-size: 12px; }
-          @media print { body { padding: 0; } button { display: none; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <span class="stamp">CONFIDENTIAL / LAW ENFORCEMENT EXHIBIT</span>
-          <h1>CRIMINAL BREACH OF TRUST & VEHICLE RECOVERY DOSSIER</h1>
-          <p class="sub">Generated by MM Ride Fleet Management System under Section 316 BNS / Section 406 IPC</p>
-          <p style="font-size: 12px; color: #475569; margin-top: 4px;">Dossier Generation Timestamp: <b>${nowStr}</b></p>
-        </div>
-
-        <div class="alert-box">
-          <b>CRIMINAL INCIDENT SUMMARY:</b> Commercial vehicle <b>${regNo}</b> was handed over to the custody-holder for authorized bike-taxi shifts only under signed bailment. Custody-holder has ceased authorized contact, violated operating geofences, and failed to return vehicle to the designated depot.
-        </div>
-
-        <h3>1. Commercial Vehicle Details</h3>
-        <table class="table-box">
-          <tr><th>Vehicle Registration No.</th><td><b>${regNo}</b></td></tr>
-          <tr><th>Vehicle Ownership</th><td>MM Ride Commercial Fleet Partner</td></tr>
-          <tr><th>Original RC Status</th><td>Retained at Depot (Driver holds only verified attested copy)</td></tr>
-          <tr><th>Tracker Serial & Status</th><td>4G Relay Tracker Active (Ignition Remote Cut Compatible)</td></tr>
-        </table>
-
-        <h3>2. Custody Holder / Driver Details</h3>
-        <table class="table-box">
-          <tr><th>Full Legal Name</th><td><b>${driverName}</b></td></tr>
-          <tr><th>Driving Licence (DL) No.</th><td>${dlNumber}</td></tr>
-          <tr><th>Primary Mobile Number</th><td>${phone}</td></tr>
-          <tr><th>Residential Address</th><td>${address}</td></tr>
-          <tr><th>Legal Agreement Signed</th><td>Yes (Electronic Bailment & Anti-Fraud Custody Declaration)</td></tr>
-        </table>
-
-        <h3>3. Real-Time Telemetry & Last Known Coordinates</h3>
-        <table class="table-box">
-          <tr><th>Last Known Latitude</th><td>${loc?.latitude || 'N/A'}</td></tr>
-          <tr><th>Last Known Longitude</th><td>${loc?.longitude || 'N/A'}</td></tr>
-          <tr><th>Last Recorded Speed</th><td>${loc?.speed || 0} km/h</td></tr>
-          <tr><th>Last Transmission Time</th><td>${loc?.timestamp ? new Date(loc.timestamp).toLocaleString('en-IN') : 'N/A'}</td></tr>
-          <tr><th>Google Maps Live Location</th><td><a href="https://maps.google.com/?q=${loc?.latitude},${loc?.longitude}" target="_blank">View Last Known Coordinate on Google Maps</a></td></tr>
-        </table>
-
-        <h3>4. Legal Grounding</h3>
-        <p style="font-size: 12px; color: #334155; line-height: 1.6;">
-          This incident constitutes a prima facie case of <b>Criminal Breach of Trust (Section 316 Bharatiya Nyaya Sanhita, 2023 / Section 406 Indian Penal Code)</b> and <b>Dishonest Misappropriation of Property</b>. The custody-holder has no legal title or right to retain, alienate, transfer, or pawn the vehicle. Local law enforcement is requested to intercept the vehicle and take custody immediately.
-        </p>
-
-        <div class="sig-row">
-          <div class="sig-box">Fleet Security Manager (Sign & Seal)</div>
-          <div class="sig-box">Receiving Police Station / Officer</div>
-        </div>
-
-        <div style="margin-top: 2rem; text-align: center;">
-          <button onclick="window.print()" style="background: #b91c1c; color: #fff; padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px;">
-            🖨️ Print / Save as PDF Dossier
-          </button>
-        </div>
-      </body>
-      </html>
-    `);
-    dossierWindow.document.close();
   };
 
   const allAlerts = driversWithGps.map(d => ({ driver: d, risk: evaluateAbscondingRisk(d) }));
@@ -578,27 +656,33 @@ export default function LiveMonitoring({ onSelectDriver }) {
       </div>
 
       {/* Main Map + Side Telemetry Panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: selectedDriver ? '1fr 340px' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: activeSelectedDriver ? '1fr 340px' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
         <div style={{ height: '100%', minHeight: 500 }}>
           <LiveMap
             drivers={filteredMapDrivers}
             hubs={hubs}
-            selectedDriver={selectedDriver}
-            onSelectDriver={(d) => setSelectedDriver(d)}
+            selectedDriver={activeSelectedDriver}
+            onSelectDriver={(d) => {
+              setSelectedDriver(d);
+              setActionFeedback(null);
+            }}
           />
         </div>
 
         {/* Selected Driver Inspection Drawer */}
-        {selectedDriver && (
+        {activeSelectedDriver && (
           <div className="panel" style={{ margin: 0, overflowY: 'auto' }}>
             <div className="panel-header">
               <div className="panel-title" style={{ fontSize: '1rem' }}>
                 <Bike size={16} color="#F59E0B" />
-                <span>{selectedDriver.fullName || 'Driver Details'}</span>
+                <span>{activeSelectedDriver.fullName || 'Driver Details'}</span>
               </div>
               <button 
                 className="btn btn-secondary btn-sm"
-                onClick={() => setSelectedDriver(null)}
+                onClick={() => {
+                  setSelectedDriver(null);
+                  setActionFeedback(null);
+                }}
               >
                 Close
               </button>
@@ -607,7 +691,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.85rem' }}>
               {/* Real-time Threat Matrix Assessment */}
               {(() => {
-                const r = evaluateAbscondingRisk(selectedDriver);
+                const r = evaluateAbscondingRisk(activeSelectedDriver);
                 return (
                   <div style={{
                     background: r.level === 'CRITICAL' ? 'rgba(239, 68, 68, 0.2)' : r.level === 'WARNING' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.1)',
@@ -631,7 +715,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
               <div>
                 <span style={{ color: '#94A3B8' }}>Assigned Bike:</span>
                 <div style={{ fontWeight: 700, color: '#F59E0B', fontSize: '0.95rem' }}>
-                  {selectedDriver.assignedBikeRegistration || 'Assigned Bike'}
+                  {activeSelectedDriver.assignedBikeRegistration || 'Assigned Bike'}
                 </div>
               </div>
 
@@ -643,22 +727,22 @@ export default function LiveMonitoring({ onSelectDriver }) {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ color: '#94A3B8' }}>Current Speed:</span>
-                  <b style={{ color: (selectedDriver.lastKnownLocation?.speed || 0) > 60 ? '#EF4444' : '#10B981' }}>
-                    {selectedDriver.lastKnownLocation?.speed || 0} km/h
+                  <b style={{ color: (activeSelectedDriver.lastKnownLocation?.speed || 0) > 60 ? '#EF4444' : '#10B981' }}>
+                    {activeSelectedDriver.lastKnownLocation?.speed || 0} km/h
                   </b>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span style={{ color: '#94A3B8' }}>Telemetry Update:</span>
-                  <b>{formatDateTime(selectedDriver.lastKnownLocation?.timestamp)}</b>
+                  <b>{formatDateTime(activeSelectedDriver.lastKnownLocation?.timestamp)}</b>
                 </div>
-                {selectedDriver.lastKnownLocation?.latitude && (
+                {activeSelectedDriver.lastKnownLocation?.latitude && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                     <span style={{ color: '#94A3B8' }}>Hub Perimeter:</span>
                     {(() => {
                       const hLat = hubLat, hLng = hubLng;
                       const dKm = Math.round(Math.sqrt(
-                        Math.pow((selectedDriver.lastKnownLocation.latitude - hLat) * 111, 2) + 
-                        Math.pow((selectedDriver.lastKnownLocation.longitude - hLng) * 111, 2)
+                        Math.pow((activeSelectedDriver.lastKnownLocation.latitude - hLat) * 111, 2) + 
+                        Math.pow((activeSelectedDriver.lastKnownLocation.longitude - hLng) * 111, 2)
                       ));
                       return (
                         <b style={{ color: dKm > 45 ? '#EF4444' : dKm > 35 ? '#F59E0B' : '#10B981' }}>
@@ -671,7 +755,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                   <span style={{ color: '#94A3B8' }}>Phone Heartbeat:</span>
                   {(() => {
-                    const lastMs = selectedDriver.lastKnownLocation?.timestamp ? new Date(selectedDriver.lastKnownLocation.timestamp).getTime() : 0;
+                    const lastMs = activeSelectedDriver.lastKnownLocation?.timestamp ? new Date(activeSelectedDriver.lastKnownLocation.timestamp).getTime() : 0;
                     const isOffline = (Date.now() - lastMs) > (3 * 60 * 1000);
                     return (
                       <b style={{ color: isOffline ? '#EF4444' : '#10B981' }}>
@@ -688,23 +772,23 @@ export default function LiveMonitoring({ onSelectDriver }) {
 
               <div>
                 <span style={{ color: '#94A3B8' }}>Current Duty Session:</span>
-                <div><code>{selectedDriver.currentDutyId || 'None'}</code></div>
+                <div><code>{activeSelectedDriver.currentDutyId || 'None'}</code></div>
               </div>
 
               <div>
                 <span style={{ color: '#94A3B8' }}>Dedicated MDM Terminal:</span>
                 <div>
                   <span className="badge badge-success">
-                    {selectedDriver.boundDeviceId ? `BOUND TO [${selectedDriver.boundDeviceId.slice(-8)}]` : 'GENUINE ANDROID DEVICE'}
+                    {activeSelectedDriver.boundDeviceId ? `BOUND TO [${activeSelectedDriver.boundDeviceId.slice(-8)}]` : 'GENUINE ANDROID DEVICE'}
                   </span>
                 </div>
                 <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: 3 }}>
-                  🔋 Battery: <b style={{ color: (selectedDriver.deviceBattery || 80) <= 20 ? '#EF4444' : '#10B981' }}>{selectedDriver.deviceBattery || 80}%</b> • 📶 {selectedDriver.deviceNetwork || '5G'} • 🛡️ Kiosk Locked
+                  🔋 Battery: <b style={{ color: (activeSelectedDriver.deviceBattery || 80) <= 20 ? '#EF4444' : '#10B981' }}>{activeSelectedDriver.deviceBattery || 80}%</b> • 📶 {activeSelectedDriver.deviceNetwork || '5G'} • 🛡️ Kiosk Locked
                 </div>
               </div>
 
               {/* Emergency Welfare & Possible Accident Protocol */}
-              {(selectedDriver.abnormalStopAlert?.active || evaluateAbscondingRisk(selectedDriver).code === 'POSSIBLE_ACCIDENT_ABNORMAL_STOP') && (
+              {(activeSelectedDriver.abnormalStopAlert?.active || evaluateAbscondingRisk(activeSelectedDriver).code === 'POSSIBLE_ACCIDENT_ABNORMAL_STOP') && (
                 <div style={{
                   background: 'rgba(245, 158, 11, 0.12)',
                   border: '1px solid rgba(245, 158, 11, 0.5)',
@@ -722,20 +806,20 @@ export default function LiveMonitoring({ onSelectDriver }) {
                     Sudden deceleration detected (High Speed ➔ 0 km/h). Driver or phone unresponsive. Immediate welfare check required:
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: 2 }}>
-                    {selectedDriver.mobileNumber && (
-                      <a href={`tel:${selectedDriver.mobileNumber}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FFF' }}>
+                    {activeSelectedDriver.mobileNumber && (
+                      <a href={`tel:${activeSelectedDriver.mobileNumber}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FFF' }}>
                         📞 Call Driver
                       </a>
                     )}
-                    {selectedDriver.emergencyContactPhone && (
-                      <a href={`tel:${selectedDriver.emergencyContactPhone}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FCA5A5', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                    {activeSelectedDriver.emergencyContactPhone && (
+                      <a href={`tel:${activeSelectedDriver.emergencyContactPhone}`} className="btn btn-secondary btn-sm" style={{ textAlign: 'center', textDecoration: 'none', color: '#FCA5A5', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
                         ❤️ Family Contact
                       </a>
                     )}
                   </div>
-                  {selectedDriver.lastKnownLocation?.latitude && (
+                  {activeSelectedDriver.lastKnownLocation?.latitude && (
                     <a 
-                      href={`https://www.google.com/maps/search/hospital/@${selectedDriver.lastKnownLocation.latitude},${selectedDriver.lastKnownLocation.longitude},15z`}
+                      href={`https://www.google.com/maps/search/hospital/@${activeSelectedDriver.lastKnownLocation.latitude},${activeSelectedDriver.lastKnownLocation.longitude},15z`}
                       target="_blank" 
                       rel="noopener noreferrer" 
                       className="btn btn-secondary btn-sm"
@@ -749,7 +833,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
                     style={{ marginTop: 2 }}
                     onClick={async () => {
                       try {
-                        await updateDoc(doc(db, 'drivers', selectedDriver.id), {
+                        await updateDoc(doc(db, 'drivers', activeSelectedDriver.id), {
                           abnormalStopAlert: { active: false, resolvedAt: new Date().toISOString() }
                         });
                         alert('Welfare check resolved: Driver marked safe / breakdown addressed.');
@@ -777,43 +861,174 @@ export default function LiveMonitoring({ onSelectDriver }) {
                   <ShieldAlert size={14} /> Remote Anti-Theft Defense Controls
                 </div>
 
-                {/* Challenge Live Face */}
+                {/* Instant Action Feedback Toast Card */}
+                {actionFeedback && (
+                  <div style={{
+                    background: actionFeedback.type === 'danger' ? 'rgba(239, 68, 68, 0.2)' 
+                              : actionFeedback.type === 'warning' ? 'rgba(245, 158, 11, 0.2)' 
+                              : actionFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.2)' 
+                              : 'rgba(56, 189, 248, 0.2)',
+                    border: `1px solid ${actionFeedback.type === 'danger' ? '#EF4444' : actionFeedback.type === 'warning' ? '#F59E0B' : actionFeedback.type === 'success' ? '#10B981' : '#38BDF8'}`,
+                    borderRadius: 6,
+                    padding: '0.6rem 0.75rem',
+                    fontSize: '0.78rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <b style={{ color: actionFeedback.type === 'danger' ? '#F87171' : actionFeedback.type === 'warning' ? '#FCD34D' : actionFeedback.type === 'success' ? '#34D399' : '#38BDF8' }}>
+                        {actionFeedback.title}
+                      </b>
+                      <button 
+                        onClick={() => setActionFeedback(null)} 
+                        style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', fontSize: 13, padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ color: '#E2E8F0', lineHeight: 1.35 }}>{actionFeedback.message}</div>
+                    {actionFeedback.actionButton && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ alignSelf: 'flex-start', marginTop: 4, padding: '2px 8px', fontSize: '0.72rem' }}
+                        onClick={actionFeedback.actionButton.onClick}
+                      >
+                        {actionFeedback.actionButton.label}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Active Engine Immobilizer Status Banner */}
+                {activeSelectedDriver.engineImmobilized && (
+                  <div style={{
+                    background: 'rgba(239, 68, 68, 0.25)',
+                    border: '1px solid #EF4444',
+                    borderRadius: 6,
+                    padding: '0.5rem 0.65rem',
+                    fontSize: '0.74rem',
+                    color: '#FCA5A5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ fontSize: '1.2rem' }}>⚡</span>
+                    <div>
+                      <b style={{ color: '#FFF' }}>ENGINE CUT-OFF ACTIVE</b>
+                      <div style={{ fontSize: '0.7rem', color: '#FECACA' }}>
+                        Ignition cut off remotely. Driver app screen is locked down.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Selfie Verification Status Badge */}
+                {activeSelectedDriver.pendingVerification?.status === 'PENDING' && (
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    border: '1px dashed #F59E0B',
+                    borderRadius: 6,
+                    padding: '0.5rem 0.65rem',
+                    fontSize: '0.74rem',
+                    color: '#FCD34D',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}>
+                    <span style={{ fontSize: '1.1rem' }}>⏳</span>
+                    <div>
+                      <b>Driver Selfie Verification Pending (90s)</b>
+                      <div style={{ fontSize: '0.7rem', color: '#CBD5E1' }}>
+                        Waiting for driver to submit live camera selfie on mobile phone...
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSelectedDriver.pendingVerification?.status === 'VERIFIED' && (
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid #10B981',
+                    borderRadius: 6,
+                    padding: '0.5rem 0.65rem',
+                    fontSize: '0.74rem',
+                    color: '#34D399',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.3rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <CheckCircle2 size={13} color="#10B981" />
+                      <b>Driver Identity Verified ✅</b>
+                    </div>
+                    {activeSelectedDriver.pendingVerification?.photoUrl && (
+                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <img 
+                          src={activeSelectedDriver.pendingVerification.photoUrl} 
+                          alt="Driver Selfie" 
+                          style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 6, border: '1px solid #10B981' }} 
+                        />
+                        <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Verified face snapshot confirmed via mobile front camera</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 1. Challenge Live Face */}
                 <button
                   className="btn btn-secondary btn-sm"
                   style={{ width: '100%', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#FCD34D' }}
-                  onClick={() => handleTriggerLiveSelfieChallenge(selectedDriver)}
+                  onClick={() => handleTriggerLiveSelfieChallenge(activeSelectedDriver)}
+                  disabled={actionLoading === 'SELFIE'}
                   title="Force driver to take front camera selfie within 90s"
                 >
-                  <Camera size={14} /> Challenge Live Face Selfie
+                  {actionLoading === 'SELFIE' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Dispatching to Phone...</>
+                  ) : (
+                    <><Camera size={14} /> Challenge Live Face Selfie</>
+                  )}
                 </button>
 
-                {/* Engine Immobilizer Relay */}
-                {selectedDriver.assignedBikeId && (
+                {/* 2. Engine Immobilizer Relay */}
+                {activeSelectedDriver.assignedBikeId && (
                   <button
-                    className={`btn btn-sm ${selectedDriver.engineImmobilized ? 'btn-success' : 'btn-danger'}`}
+                    className={`btn btn-sm ${activeSelectedDriver.engineImmobilized ? 'btn-success' : 'btn-danger'}`}
                     style={{ width: '100%' }}
-                    onClick={() => handleToggleEngineImmobilizer(selectedDriver)}
+                    onClick={() => handleToggleEngineImmobilizer(activeSelectedDriver)}
+                    disabled={actionLoading === 'ENGINE'}
                   >
-                    <Power size={14} />
-                    {selectedDriver.engineImmobilized ? 'Restore Engine Ignition 🟢' : 'Cut-Off Engine (Immobilize) ⚡'}
+                    {actionLoading === 'ENGINE' ? (
+                      <><Loader2 size={14} className="animate-spin" /> Sending Relay Signal...</>
+                    ) : (
+                      <>
+                        <Power size={14} />
+                        {activeSelectedDriver.engineImmobilized ? 'Restore Engine Ignition 🟢' : 'Cut-Off Engine (Immobilize) ⚡'}
+                      </>
+                    )}
                   </button>
                 )}
 
-                {/* 1-Click Police FIR Dossier Export */}
+                {/* 3. 1-Click Police FIR Dossier Export */}
                 <button
                   className="btn btn-secondary btn-sm"
                   style={{ width: '100%', borderColor: 'rgba(239, 68, 68, 0.5)', color: '#FCA5A5' }}
-                  onClick={() => handleExportPoliceDossier(selectedDriver)}
+                  onClick={() => handleExportPoliceDossier(activeSelectedDriver)}
+                  disabled={actionLoading === 'DOSSIER'}
                   title="Generate instant legal complaint dossier for police recovery"
                 >
-                  📄 Export Police FIR Dossier (BNS 316)
+                  {actionLoading === 'DOSSIER' ? (
+                    <><Loader2 size={14} className="animate-spin" /> Generating Dossier...</>
+                  ) : (
+                    <>📄 Export Police FIR Dossier (BNS 316)</>
+                  )}
                 </button>
               </div>
 
               <button
                 className="btn btn-primary"
                 style={{ width: '100%', marginTop: '1rem' }}
-                onClick={() => onSelectDriver(selectedDriver)}
+                onClick={() => onSelectDriver(activeSelectedDriver)}
               >
                 View Full 360° Profile <ExternalLink size={14} />
               </button>

@@ -10,6 +10,7 @@ import { logGpsBreadcrumb, bindDriverDevice } from '../firebase/api';
 import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics, updateMdmTelemetryLocation } from '../services/deviceMdmService';
 import MdmKioskOverlay from '../components/MdmKioskOverlay';
 import PrivacyNoticeModal from '../components/PrivacyNoticeModal';
+import GlobalSecurityOverlay from '../components/GlobalSecurityOverlay';
 
 const DriverContext = createContext();
 
@@ -331,6 +332,7 @@ export function DriverProvider({ children }) {
         visible={privacyModalVisible}
         onClose={() => setPrivacyModalVisible(false)}
       />
+      <GlobalSecurityOverlay />
       {children}
     </DriverContext.Provider>
   );
