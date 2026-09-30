@@ -24,9 +24,10 @@ import { db } from '../firebase/config';
 export default function Sidebar({ currentTab, setTab }) {
   const { currentUser, userRole, logout } = useAuth();
   const [pendingVerifCount, setPendingVerifCount] = useState(0);
+  const [pendingAddressCount, setPendingAddressCount] = useState(0);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'drivers'), (snap) => {
+    const unsubDrivers = onSnapshot(collection(db, 'drivers'), (snap) => {
       let count = 0;
       snap.forEach(d => {
         const data = d.data();
@@ -41,7 +42,22 @@ export default function Sidebar({ currentTab, setTab }) {
       });
       setPendingVerifCount(count);
     });
-    return () => unsub();
+
+    const unsubAddresses = onSnapshot(collection(db, 'addresses'), (snap) => {
+      let addrCount = 0;
+      snap.forEach(a => {
+        const data = a.data();
+        if (!data.isVerified && data.verificationStatus !== 'VERIFIED') {
+          addrCount++;
+        }
+      });
+      setPendingAddressCount(addrCount);
+    });
+
+    return () => {
+      unsubDrivers();
+      unsubAddresses();
+    };
   }, []);
 
   const navCategories = [
@@ -58,7 +74,7 @@ export default function Sidebar({ currentTab, setTab }) {
       items: [
         { id: 'drivers', label: 'Driver Directory', icon: Users },
         { id: 'verification', label: 'Doc Verification', icon: FileCheck2, badge: pendingVerifCount },
-        { id: 'address-verif', label: 'Address Verification', icon: Home },
+        { id: 'address-verif', label: 'Address Verification', icon: Home, badge: pendingAddressCount },
         { id: 'leave', label: 'Leave Requests', icon: CalendarOff },
       ]
     },

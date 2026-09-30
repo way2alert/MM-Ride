@@ -13,7 +13,9 @@ import {
   AlertOctagon, 
   Wrench,
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Home,
+  FileCheck2
 } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import LiveMap from '../components/LiveMap';
@@ -22,6 +24,7 @@ import { formatDateTime } from '../utils/formatters';
 
 export default function Dashboard({ setTab }) {
   const [drivers, setDrivers] = useState([]);
+  const [addresses, setAddresses] = useState([]);
   const [bikes, setBikes] = useState([]);
   const [hubs, setHubs] = useState([]);
   const [dutySessions, setDutySessions] = useState([]);
@@ -32,6 +35,7 @@ export default function Dashboard({ setTab }) {
 
   useEffect(() => {
     const unsubDrivers = subscribeToCollection('drivers', setDrivers);
+    const unsubAddresses = subscribeToCollection('addresses', setAddresses);
     const unsubBikes = subscribeToCollection('bikes', setBikes);
     const unsubHubs = subscribeToCollection('hubs', setHubs);
     const unsubDuty = subscribeToCollection('dutySessions', setDutySessions);
@@ -42,6 +46,7 @@ export default function Dashboard({ setTab }) {
 
     return () => {
       unsubDrivers();
+      unsubAddresses();
       unsubBikes();
       unsubHubs();
       unsubDuty();
@@ -52,11 +57,35 @@ export default function Dashboard({ setTab }) {
     };
   }, []);
 
-  // Compute the 12 Metrics required by section 29
+  // Compute Metrics
   const totalDrivers = drivers.length;
-  const pendingVerification = drivers.filter(d => 
-    d.verificationStatus === 'PENDING' || d.accountStatus === 'DOCUMENT_VERIFICATION_PENDING' || d.accountStatus === 'ADDRESS_VERIFICATION_PENDING'
+  
+  // Pending Document KYC Review
+  const pendingDocVerification = drivers.filter(d => 
+    d.approvalStatus === 'PENDING' || 
+    d.accountStatus === 'DOCUMENT_VERIFICATION_PENDING' || 
+    d.accountStatus === 'DOCUMENTS_SUBMITTED' ||
+    d.verificationStatus === 'PENDING'
   ).length;
+
+  // Pending Driver Physical Address Verification
+  const pendingAddressVerification = (() => {
+    const unverifiedDriverIds = new Set(
+      addresses
+        .filter(a => !a.isVerified && a.verificationStatus !== 'VERIFIED')
+        .map(a => a.driverId)
+    );
+    drivers.forEach(d => {
+      if (
+        d.accountStatus === 'ADDRESS_VERIFICATION_PENDING' ||
+        (!d.addressVerified && d.verificationStatus === 'DOCUMENTS_VERIFIED' && !d.assignedBikeId)
+      ) {
+        unverifiedDriverIds.add(d.id);
+      }
+    });
+    return unverifiedDriverIds.size;
+  })();
+
   const approvedDrivers = drivers.filter(d => d.approvalStatus === 'APPROVED').length;
   
   const bikesAvailable = bikes.filter(b => b.status === 'AVAILABLE' || b.status === 'RETURNED').length;
@@ -77,7 +106,7 @@ export default function Dashboard({ setTab }) {
 
   return (
     <div>
-      {/* 12 Metric Cards requested in Section 29 */}
+      {/* Metric Cards Grid */}
       <div className="metrics-grid">
         <MetricCard
           title="Total Drivers"
@@ -87,12 +116,20 @@ export default function Dashboard({ setTab }) {
           onClick={() => setTab('drivers')}
         />
         <MetricCard
-          title="Pending Verification"
-          value={pendingVerification}
-          subtitle="Docs & Address queue"
-          icon={FileClock}
-          highlight={pendingVerification > 0}
+          title="Doc Verification"
+          value={pendingDocVerification}
+          subtitle="KYC docs review"
+          icon={FileCheck2}
+          highlight={pendingDocVerification > 0}
           onClick={() => setTab('verification')}
+        />
+        <MetricCard
+          title="Address Verification"
+          value={pendingAddressVerification}
+          subtitle="Field inspection queue"
+          icon={Home}
+          highlight={pendingAddressVerification > 0}
+          onClick={() => setTab('address-verif')}
         />
         <MetricCard
           title="Approved Drivers"
