@@ -76,6 +76,16 @@ export default function BreakScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.topBackRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('ActiveDuty'))}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backBtnText}>← Back to Shift</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.heading}>Break Management</Text>
       <Text style={styles.subheading}>
         Manage rest periods during your authorized 12-hour work day
@@ -240,5 +250,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     paddingHorizontal: 10
+  },
+  topBackRow: {
+    marginBottom: 12,
+    alignSelf: 'flex-start'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  backBtnText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

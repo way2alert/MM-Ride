@@ -28,6 +28,17 @@ export default function RegistrationScreen({ navigation }) {
     upiId: driverProfile?.upiId || ''
   });
 
+  const loggedInMobile = (
+    currentUser?.phoneNumber?.replace(/\D/g, '').slice(-10) ||
+    driverProfile?.mobileNumber?.replace(/\D/g, '').slice(-10) ||
+    ''
+  );
+  const cleanedEmergencyPhone = form.emergencyContactPhone.replace(/\D/g, '').slice(-10);
+  const isSameAsDriverPhone = (
+    loggedInMobile.length === 10 &&
+    cleanedEmergencyPhone === loggedInMobile
+  );
+
   const [isLocating, setIsLocating] = useState(false);
   const [isLocationLocked, setIsLocationLocked] = useState(false);
 
@@ -113,6 +124,13 @@ export default function RegistrationScreen({ navigation }) {
     }
     if (!trimmedPhone || trimmedPhone.length < 10) {
       Alert.alert('Missing Field', 'Please enter a valid 10-digit Emergency Contact mobile number.');
+      return;
+    }
+    if (isSameAsDriverPhone) {
+      Alert.alert(
+        'Invalid Family Number',
+        `Family/Emergency contact number cannot be the same as your logged-in mobile number (+91 ${loggedInMobile}). Please provide a family member or relative number.`
+      );
       return;
     }
     if (!trimmedUpi) {
@@ -266,14 +284,22 @@ export default function RegistrationScreen({ navigation }) {
           4. Emergency Contact Mobile (Family Phone Number) *
         </Text>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            isSameAsDriverPhone && { borderColor: colors.danger, borderWidth: 1.5 }
+          ]}
           placeholder="10-digit family mobile number"
           placeholderTextColor={colors.textMuted}
           keyboardType="phone-pad"
           maxLength={10}
           value={form.emergencyContactPhone}
-          onChangeText={(v) => setForm({ ...form, emergencyContactPhone: v })}
+          onChangeText={(v) => setForm({ ...form, emergencyContactPhone: v.replace(/\D/g, '').slice(0, 10) })}
         />
+        {isSameAsDriverPhone && (
+          <Text style={{ color: colors.danger, fontSize: 12, marginTop: 4, fontWeight: '700' }}>
+            ⚠️ Family number cannot be the same as your logged-in mobile number (+91 {loggedInMobile})
+          </Text>
+        )}
 
         {/* 5. UPI ID */}
         <Text style={[styles.label, { marginTop: 14 }]}>

@@ -86,7 +86,7 @@ export default function VerificationStatusScreen({ navigation }) {
       });
   };
 
-  const sendWhatsAppAlert = (targetPhone = '7200723901') => {
+  const sendWhatsAppAlert = (targetPhone = '9841307455') => {
     const cleanNumber = targetPhone.replace(/\D/g, '');
     const fullNumber = cleanNumber.startsWith('91') ? cleanNumber : `91${cleanNumber}`;
     const text = encodeURIComponent(
@@ -104,16 +104,16 @@ export default function VerificationStatusScreen({ navigation }) {
       'Select which fleet admin to message for fast verification approval:',
       [
         {
-          text: 'Admin 1 (Primary): 7200723901',
+          text: 'Admin 1 (Primary): 9841307455',
+          onPress: () => sendWhatsAppAlert('9841307455')
+        },
+        {
+          text: 'Admin 2: 7200723901',
           onPress: () => sendWhatsAppAlert('7200723901')
         },
         {
-          text: 'Admin 2: 9976294844',
+          text: 'Admin 3: 9976294844',
           onPress: () => sendWhatsAppAlert('9976294844')
-        },
-        {
-          text: 'Admin 3: 9841307455',
-          onPress: () => sendWhatsAppAlert('9841307455')
         },
         {
           text: 'Cancel',
@@ -144,28 +144,7 @@ export default function VerificationStatusScreen({ navigation }) {
         }}
       />
 
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Top Navigation Row: Back to Login / Switch Account (Only for unapproved applicants) */}
-        {!isSuccessfullyApproved && (
-          <View style={styles.topNavRow}>
-            <TouchableOpacity 
-              style={styles.backToLoginBtn} 
-              onPress={() => {
-                Alert.alert(
-                  'Go Back to Login',
-                  'Do you want to sign out and return to the login screen?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Yes, Go to Login', style: 'destructive', onPress: logout }
-                  ]
-                );
-              }}
-            >
-              <Text style={styles.backToLoginText}>← Back to Login / Switch Account</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 40 }]}>
         <View style={styles.header}>
           <Text style={styles.title}>Account Status (Khata Ki Sthiti)</Text>
           <Text style={styles.subtitle}>Verification & Vehicle Allocation Stages</Text>
@@ -330,10 +309,10 @@ export default function VerificationStatusScreen({ navigation }) {
 
             <TouchableOpacity
               style={styles.whatsappAlertBtn}
-              onPress={() => sendWhatsAppAlert('7200723901')}
+              onPress={() => sendWhatsAppAlert('9841307455')}
               activeOpacity={0.85}
             >
-              <Text style={styles.whatsappAlertBtnText}>💬 WhatsApp Admin (7200723901) for 5-Min Fast Approval</Text>
+              <Text style={styles.whatsappAlertBtnText}>💬 WhatsApp Admin (9841307455) for 5-Min Fast Approval</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -341,7 +320,7 @@ export default function VerificationStatusScreen({ navigation }) {
               onPress={handleSelectAdminForWhatsApp}
               activeOpacity={0.8}
             >
-              <Text style={styles.backupAdminBtnText}>📱 Other Admin WhatsApp Numbers (9976294844 / 9841307455)</Text>
+              <Text style={styles.backupAdminBtnText}>📱 Other Admin WhatsApp Numbers (7200723901 / 9976294844)</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -421,15 +400,6 @@ export default function VerificationStatusScreen({ navigation }) {
             onPress={() => navigation?.navigate && navigation.navigate('Home')}
             variant="success"
             style={{ marginBottom: 12 }}
-          />
-        )}
-
-        {!isSuccessfullyApproved && (
-          <BigButton
-            title="Sign Out / Log Out"
-            onPress={logout}
-            variant="secondary"
-            style={{ marginBottom: 40 }}
           />
         )}
       </ScrollView>

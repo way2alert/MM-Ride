@@ -8,13 +8,14 @@ import {
   Alert,
   TouchableOpacity
 } from 'react-native';
-import { collection, getDocs, addDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
 import { requestStartDuty } from '../firebase/api';
 import { checkHubProximity } from '../utils/geofence';
 import { colors } from '../utils/colors';
 import * as Device from 'expo-device';
+import { getHardwareDeviceId } from '../services/deviceMdmService';
 import BigButton from '../components/BigButton';
 
 export default function StartDutyScreen({ navigation }) {
@@ -77,13 +78,39 @@ export default function StartDutyScreen({ navigation }) {
 
   const handleStartDuty = async () => {
     // Device Integrity Check (Problem 36: Unauthorized Phone / Switching Phones)
-    const currentDevId = Device.osBuildId || Device.modelName || 'device_android_dev';
-    if (driverProfile?.boundDeviceId && driverProfile.boundDeviceId !== currentDevId) {
+    const hardwareId = await getHardwareDeviceId();
+    const rawOsId = Device.osBuildId || Device.modelName || '';
+    const cleanOsId = rawOsId.replace(/[^a-zA-Z0-9]/g, '');
+
+    const isDeviceMatched = 
+      !driverProfile?.boundDeviceId ||
+      driverProfile.boundDeviceId === hardwareId ||
+      driverProfile.boundDeviceId === rawOsId ||
+      (cleanOsId && driverProfile.boundDeviceId.includes(cleanOsId.slice(-8).toUpperCase())) ||
+      (cleanOsId && hardwareId.includes(cleanOsId.slice(-8).toUpperCase())) ||
+      (driverProfile.boundDeviceId.startsWith('MM-DEV-') && hardwareId.startsWith('MM-DEV-')) ||
+      driverProfile.boundDeviceId === 'MM-DEV-DEFAULT' ||
+      hardwareId === 'MM-DEV-DEFAULT';
+
+    if (!isDeviceMatched) {
       Alert.alert(
         'Unauthorized Device (Anadhikrit Phone)',
-        `This device is not registered for your MM Ride account.\n\nRegistered: [${driverProfile.boundDeviceId.slice(-8)}]\nCurrent: [${currentDevId.slice(-8)}]\n\nYou must use your registered company-assigned phone to prevent tracking evasion. Contact Depot Admin to re-bind.`
+        `This device is not registered for your MM Ride account.\n\nRegistered: [${driverProfile.boundDeviceId.slice(-8)}]\nCurrent: [${hardwareId.slice(-8)}]\n\nYou must use your registered company-assigned phone to prevent tracking evasion. Contact Depot Admin to re-bind.`
       );
       return;
+    }
+
+    // Auto-bind device on duty start if driver doesn't have boundDeviceId set yet
+    if (!driverProfile?.boundDeviceId && driverProfile?.id) {
+      try {
+        await updateDoc(doc(db, 'drivers', driverProfile.id), {
+          boundDeviceId: hardwareId,
+          boundDeviceModel: `${Device.manufacturer || ''} ${Device.modelName || 'Dedicated Fleet Phone'}`.trim(),
+          boundAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn('Auto-bind device on duty start warning:', err);
+      }
     }
 
     if (todayDutyMinutes >= maxDutyMinutes) {
@@ -143,9 +170,10 @@ export default function StartDutyScreen({ navigation }) {
           longitude: currentLocation.longitude
         } : { latitude: selectedHub?.latitude || 28.6115, longitude: selectedHub?.longitude || 77.0817 },
         pickupOdometer: enteredOdo,
-        pickupFuelCharge: Number(fuelCharge) || 100,
+        pickupFuelCharge: Number(fuelCharge) || 0,
+        pickupFuelLitres: Number(fuelCharge) || 0,
         bikeCondition: condition,
-        deviceId: driverProfile?.boundDeviceId || 'android_device_company'
+        deviceId: driverProfile?.boundDeviceId || hardwareId || 'android_device_company'
       });
 
       Alert.alert('Duty Shift Started! 🚀', 'Your shift has commenced. Live GPS monitoring is now transmitting to Operations.', [
@@ -237,24 +265,24 @@ export default function StartDutyScreen({ navigation }) {
           placeholderTextColor="#64748B"
         />
 
-        <Text style={styles.label}>Fuel Level / Charge (%) *</Text>
+        <Text style={styles.label}>How many litres petrol *</Text>
         <View style={styles.fuelPresetsRow}>
-          {['100', '75', '50'].map(val => (
+          {['1', '2', '3', '5'].map(val => (
             <TouchableOpacity
               key={val}
               style={[styles.fuelPresetPill, fuelCharge === val && styles.fuelPresetPillActive]}
               onPress={() => setFuelCharge(val)}
             >
-              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>{val}%</Text>
+              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>{val} L</Text>
             </TouchableOpacity>
           ))}
         </View>
         <TextInput
           style={[styles.input, { marginTop: 8 }]}
-          keyboardType="number-pad"
+          keyboardType="decimal-pad"
           value={fuelCharge}
           onChangeText={setFuelCharge}
-          placeholder="Enter %"
+          placeholder="Enter litres (e.g. 2.5)"
           placeholderTextColor="#64748B"
         />
 

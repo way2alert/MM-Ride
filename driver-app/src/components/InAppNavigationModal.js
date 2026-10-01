@@ -5,6 +5,8 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
   Linking,
   Animated,
   Dimensions,
@@ -318,83 +320,96 @@ export default function InAppNavigationModal({
           </View>
         </View>
 
-        {/* CENTER: Interactive In-App Leaflet Map */}
-        <View style={styles.mapWrapper}>
-          <WebView
-            ref={webViewRef}
-            originWhitelist={['*']}
-            source={{ html: mapHtml }}
-            style={styles.webView}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            scrollEnabled={false}
-            bounces={false}
-          />
-
-          {/* Live Floating Status Pill on Map */}
-          <View style={styles.floatingGpsPill}>
-            <Animated.View style={[styles.glowingDot, { transform: [{ scale: pulseAnim }] }]} />
-            <Text style={styles.floatingGpsText}>
-              In-App Live Navigation Active (Live GPS)
-            </Text>
-          </View>
-        </View>
-
-        {/* BOTTOM HUD: Destination Details & Actions */}
-        <View style={styles.bottomHudContainer}>
-          {/* Depot Summary Row */}
-          <View style={styles.hubDetailsRow}>
-            <View style={styles.hubIconCircle}>
-              <Text style={{ fontSize: 22 }}>🏢</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.hubTitle}>{hubName}</Text>
-              <Text style={styles.hubSubText} numberOfLines={1}>
-                {hubAddress}
-              </Text>
-              {bike?.registrationNumber && (
-                <Text style={styles.bikePillText}>
-                  🏍️ Vehicle Ready: <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>{bike.registrationNumber}</Text>
-                </Text>
+        {/* SCROLLABLE BODY */}
+        <ScrollView
+          style={styles.scrollBody}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* CENTER: Interactive In-App Leaflet Map */}
+          <View style={styles.mapWrapper}>
+            <WebView
+              ref={webViewRef}
+              originWhitelist={['*']}
+              source={{ html: mapHtml }}
+              style={styles.webView}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              scrollEnabled={false}
+              bounces={false}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.mapLoadingOverlay}>
+                  <ActivityIndicator size="small" color="#10B981" />
+                  <Text style={styles.mapLoadingText}>Loading Map GPS...</Text>
+                </View>
               )}
+            />
+
+            {/* Live Floating Status Pill on Map */}
+            <View style={styles.floatingGpsPill}>
+              <Animated.View style={[styles.glowingDot, { transform: [{ scale: pulseAnim }] }]} />
+              <Text style={styles.floatingGpsText}>
+                In-App Live Navigation (Live GPS)
+              </Text>
             </View>
           </View>
 
-          {/* Action 1: Google Maps Voice Navigation (Free, Zero API Key!) */}
-          <TouchableOpacity
-            style={styles.voiceNavButton}
-            onPress={handleOpenGoogleVoiceMaps}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.voiceNavButtonIcon}>🧭</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.voiceNavButtonTitle}>Turn-by-Turn Voice Navigation</Text>
-              <Text style={styles.voiceNavButtonSub}>Launch Google Maps spoken directions</Text>
+          {/* Depot Details & Google Navigation Card */}
+          <View style={styles.hubDetailsCard}>
+            <View style={styles.hubDetailsRow}>
+              <View style={styles.hubIconCircle}>
+                <Text style={{ fontSize: 22 }}>🏢</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hubTitle}>{hubName}</Text>
+                <Text style={styles.hubSubText}>
+                  {hubAddress}
+                </Text>
+                {bike?.registrationNumber && (
+                  <Text style={styles.bikePillText}>
+                    🏍️ Vehicle Ready: <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>{bike.registrationNumber}</Text>
+                  </Text>
+                )}
+              </View>
             </View>
-            <Text style={{ fontSize: 18, color: '#000' }}>→</Text>
-          </TouchableOpacity>
 
-          {/* Action Row: Call Manager & I Have Arrived */}
-          <View style={styles.bottomButtonsRow}>
+            {/* Google Maps Voice Navigation */}
             <TouchableOpacity
-              style={styles.callManagerButton}
-              onPress={handleCallManager}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.callButtonText}>📞 Call Hub</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.arrivedButton}
-              onPress={() => {
-                onClose();
-                if (onArrivedAtDepot) onArrivedAtDepot();
-              }}
+              style={styles.voiceNavButton}
+              onPress={handleOpenGoogleVoiceMaps}
               activeOpacity={0.85}
             >
-              <Text style={styles.arrivedButtonText}>Arrived at Depot 🏁</Text>
+              <Text style={styles.voiceNavButtonIcon}>🧭</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.voiceNavButtonTitle}>Turn-by-Turn Voice Navigation</Text>
+                <Text style={styles.voiceNavButtonSub}>Launch Google Maps spoken directions</Text>
+              </View>
+              <Text style={{ fontSize: 18, color: '#000' }}>→</Text>
             </TouchableOpacity>
           </View>
+        </ScrollView>
+
+        {/* STICKY BOTTOM ACTION FOOTER (ALWAYS VISIBLE & RESPONSIVE) */}
+        <View style={styles.stickyBottomFooter}>
+          <TouchableOpacity
+            style={styles.callManagerButton}
+            onPress={handleCallManager}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.callButtonText}>📞 Call Hub</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.arrivedButton}
+            onPress={() => {
+              onClose();
+              if (onArrivedAtDepot) onArrivedAtDepot();
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.arrivedButtonText}>Arrived at Depot 🏁</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -480,13 +495,39 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 2
   },
-  mapWrapper: {
+  scrollBody: {
     flex: 1,
-    position: 'relative'
+    backgroundColor: '#0F172A'
+  },
+  scrollContent: {
+    padding: 14,
+    paddingBottom: 24
+  },
+  mapWrapper: {
+    height: 260,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    position: 'relative',
+    marginBottom: 14,
+    backgroundColor: '#0F172A'
   },
   webView: {
     flex: 1,
     backgroundColor: '#0F172A'
+  },
+  mapLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  mapLoadingText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 8,
+    fontWeight: '600'
   },
   floatingGpsPill: {
     position: 'absolute',
@@ -518,20 +559,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600'
   },
-  bottomHudContainer: {
+  hubDetailsCard: {
     backgroundColor: '#1E293B',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 18,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 10
+    borderColor: 'rgba(255, 255, 255, 0.08)'
   },
   hubDetailsRow: {
     flexDirection: 'row',
@@ -571,7 +604,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 10
+    marginTop: 4
   },
   voiceNavButtonIcon: {
     fontSize: 22,
@@ -587,15 +620,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600'
   },
-  bottomButtonsRow: {
+  stickyBottomFooter: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'android' ? 24 : 34,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
     flexDirection: 'row',
-    gap: 10
+    gap: 12,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8
   },
   callManagerButton: {
     flex: 1,
     backgroundColor: '#334155',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -610,13 +654,14 @@ const styles = StyleSheet.create({
     flex: 1.5,
     backgroundColor: '#10B981',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    elevation: 4
   },
   arrivedButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800'
   }
 });

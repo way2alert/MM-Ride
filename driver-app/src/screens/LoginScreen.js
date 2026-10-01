@@ -137,8 +137,9 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  const handleVerifyOtp = async () => {
-    const enteredOtp = otp ? otp.trim() : '';
+  const handleVerifyOtp = async (targetOtp) => {
+    if (loading) return;
+    const enteredOtp = (typeof targetOtp === 'string' ? targetOtp : otp ? otp.trim() : '').trim();
     if (!enteredOtp || enteredOtp.length !== 6) {
       Alert.alert('Invalid Code', 'Please enter the complete 6-digit verification code received in the SMS.');
       return;
@@ -302,7 +303,16 @@ export default function LoginScreen({ navigation }) {
               keyboardType="number-pad"
               maxLength={6}
               value={otp}
-              onChangeText={setOtp}
+              onChangeText={(val) => {
+                const digits = val.replace(/\D/g, '').slice(0, 6);
+                setOtp(digits);
+                if (digits.length === 6) {
+                  handleVerifyOtp(digits);
+                }
+              }}
+              autoComplete="sms-otp"
+              textContentType="oneTimeCode"
+              importantForAutofill="yes"
               autoFocus={true}
             />
             <View style={styles.otpActionRow}>

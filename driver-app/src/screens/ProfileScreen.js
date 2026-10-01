@@ -33,6 +33,8 @@ export default function ProfileScreen({ navigation }) {
       <Header
         title="DRIVER PROFILE"
         subtitle="Account & Device Security"
+        showBack={true}
+        onBackPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
         onSosPress={() => navigation?.navigate && navigation.navigate('EmergencySOS')}
         showSos={false}
       />

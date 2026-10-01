@@ -72,6 +72,8 @@ export default function LeaveScreen({ navigation }) {
       <Header
         title="LEAVE & WEEKLY OFF"
         subtitle="Schedule Authorized Time Off"
+        showBack={true}
+        onBackPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
         onSosPress={() => navigation?.navigate && navigation.navigate('EmergencySOS')}
         onProfilePress={() => navigation?.navigate && navigation.navigate('Profile')}
       />

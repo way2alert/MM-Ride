@@ -6,7 +6,8 @@ import {
   StyleSheet, 
   ScrollView, 
   Switch, 
-  Alert 
+  Alert,
+  TouchableOpacity
 } from 'react-native';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -63,65 +64,39 @@ export default function EndDutyScreen({ navigation }) {
     }
   }, [hub, currentLocation]);
 
-  const handleEndDuty = async () => {
-    if (returnOdoNum < startOdo) {
-      Alert.alert(
-        'Invalid Return Odometer (Galat Meter Reading)',
-        `Return odometer (${returnOdoNum} km) cannot be less than shift start reading (${startOdo} km).`
-      );
-      return;
-    }
+  const executeEndDuty = async (isOverride, reasonStr) => {
+    const dutyId = activeDutySession?.id || driverProfile?.currentDutyId;
+    const driverId = currentUser?.uid || driverProfile?.id;
+    const bikeId = activeDutySession?.bikeId || driverProfile?.assignedBikeId || assignedBike?.id;
 
-    if (!keysReturned) {
-      Alert.alert('Key Return Required', 'Please confirm that bike keys have been handed over at the shop/depot.');
-      return;
-    }
-
-    if (!helmetsReturned) {
-      Alert.alert('Helmet Return Required', 'Please confirm that all company commercial helmets have been returned.');
-      return;
-    }
-
-    if (!noPartsSwapped) {
-      Alert.alert('Vehicle Integrity Confirmation Required', 'Please confirm that no tyres, battery, or parts were swapped or modified during this shift.');
-      return;
-    }
-
-    if (!proximity.within && !emergencyOverride) {
-      Alert.alert(
-        'Depot Proximity Alert',
-        `You are ${proximity.distance || 'far'} meters away from the authorized shop/depot. Return must happen at the shop or use authorized emergency override.`
-      );
-      return;
-    }
-
-    if (emergencyOverride && (!overrideReason || overrideReason.trim().length < 5)) {
-      Alert.alert('Reason Required', 'Please enter a valid reason for non-depot return.');
+    if (!dutyId) {
+      Alert.alert('No Active Shift', 'No active duty session found to end. You may already be off duty.');
       return;
     }
 
     setLoading(true);
     try {
       await requestEndDuty({
-        dutyId: activeDutySession.id,
-        driverId: currentUser.uid,
-        bikeId: activeDutySession.bikeId,
+        dutyId,
+        driverId,
+        bikeId,
         pickupOdometer: startOdo,
-        returnGps: currentLocation ? {
+        returnGps: (currentLocation && currentLocation.latitude) ? {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude
         } : null,
         returnOdometer: returnOdoNum,
-        returnFuelCharge: Number(fuelCharge),
-        bikeCondition: condition,
-        damageReported: hasDamage,
-        damageNotes,
+        returnFuelCharge: Number(fuelCharge) || 0,
+        returnFuelLitres: Number(fuelCharge) || 0,
+        bikeCondition: condition || 'GOOD',
+        damageReported: Boolean(hasDamage),
+        damageNotes: damageNotes || '',
         keysReturned: true,
         helmetsReturned: true,
         noPartsSwapped: true,
         earningsAuditAcknowledged: true,
-        emergencyOverride,
-        emergencyOverrideReason: overrideReason,
+        emergencyOverride: Boolean(isOverride !== undefined ? isOverride : emergencyOverride),
+        emergencyOverrideReason: reasonStr || overrideReason || 'Standard depot return',
         deviceId: driverProfile?.boundDeviceId || 'android_device_company'
       });
 
@@ -137,8 +112,83 @@ export default function EndDutyScreen({ navigation }) {
     }
   };
 
+  const handleEndDuty = async () => {
+    if (returnOdoNum < startOdo) {
+      Alert.alert(
+        'Invalid Return Odometer (Galat Meter Reading)',
+        `Return odometer (${returnOdoNum} km) cannot be less than shift start reading (${startOdo} km).`
+      );
+      return;
+    }
+
+    if (!keysReturned || !helmetsReturned || !noPartsSwapped) {
+      Alert.alert(
+        'Custody Return Checklist',
+        'Please confirm: Have you returned the bike keys, company helmet, and verified no parts were swapped?',
+        [
+          { text: 'Review Switches', style: 'cancel' },
+          {
+            text: 'Confirm All & Complete 🏁',
+            onPress: () => {
+              setKeysReturned(true);
+              setHelmetsReturned(true);
+              setNoPartsSwapped(true);
+              if (!proximity.within && !emergencyOverride) {
+                promptProximityOverride();
+              } else {
+                executeEndDuty(emergencyOverride, overrideReason);
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    if (!proximity.within && !emergencyOverride) {
+      promptProximityOverride();
+      return;
+    }
+
+    if (emergencyOverride && (!overrideReason || overrideReason.trim().length < 5)) {
+      Alert.alert('Reason Required', 'Please enter a valid reason for non-depot return.');
+      return;
+    }
+
+    await executeEndDuty(emergencyOverride, overrideReason);
+  };
+
+  const promptProximityOverride = () => {
+    Alert.alert(
+      'Depot Return Verification 📍',
+      `GPS indicates you are outside the geofenced depot zone (${proximity.distance || 'outside'}m).\n\nIf you are handing over the vehicle at the depot or completing an authorized return, tap below to confirm.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Depot Handover 🏁',
+          onPress: () => {
+            setEmergencyOverride(true);
+            const r = 'Supervisor confirmed depot handover';
+            setOverrideReason(r);
+            executeEndDuty(true, r);
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.topBackRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('ActiveDuty'))}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backBtnText}>← Back to Shift</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.heading}>End Duty / Return Bike</Text>
       <Text style={styles.subheading}>
         Bike return inspection at MM Ride Shop / Depot (Shift Khatam Karein)
@@ -204,12 +254,25 @@ export default function EndDutyScreen({ navigation }) {
           onChangeText={setReturnOdometer}
         />
 
-        <Text style={styles.label}>Return Fuel Level / Battery (%) *</Text>
+        <Text style={styles.label}>How many litres petrol (Remaining in tank) *</Text>
+        <View style={styles.fuelPresetsRow}>
+          {['1', '2', '3', '5'].map(val => (
+            <TouchableOpacity
+              key={val}
+              style={[styles.fuelPresetPill, fuelCharge === val && styles.fuelPresetPillActive]}
+              onPress={() => setFuelCharge(val)}
+            >
+              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>{val} L</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         <TextInput
-          style={styles.input}
-          keyboardType="number-pad"
+          style={[styles.input, { marginTop: 8 }]}
+          keyboardType="decimal-pad"
           value={fuelCharge}
           onChangeText={setFuelCharge}
+          placeholder="Enter litres (e.g. 2.5)"
+          placeholderTextColor="#64748B"
         />
 
         <Text style={styles.label}>Bike Condition Notes (Gaadi Ki Halat)</Text>
@@ -422,5 +485,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.danger,
     fontWeight: '700'
+  },
+  topBackRow: {
+    marginBottom: 12,
+    alignSelf: 'flex-start'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  backBtnText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  fuelPresetsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4
+  },
+  fuelPresetPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)'
+  },
+  fuelPresetPillActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
+    borderColor: '#F59E0B'
+  },
+  fuelPresetText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  fuelPresetTextActive: {
+    color: '#FCD34D'
   }
 });

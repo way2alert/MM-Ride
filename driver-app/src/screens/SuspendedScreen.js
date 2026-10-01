@@ -23,8 +23,8 @@ export default function SuspendedScreen() {
   const reason = driverProfile?.suspensionReason || 'Operational review pending by MM Ride Fleet Operations';
   const bikeReg = driverProfile?.assignedBikeRegistration || assignedBike?.registrationNumber || 'None';
 
-  const primaryAdminPhone = '7200723901';
-  const backupAdminPhone = '9976294844';
+  const primaryAdminPhone = '9841307455';
+  const backupAdminPhone = '7200723901';
 
   const handleCallSupport = (phone = primaryAdminPhone) => {
     Linking.openURL(`tel:+91${phone}`).catch(() => {

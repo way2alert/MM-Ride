@@ -51,6 +51,16 @@ export default function EmergencySOSScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.topBackRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.emergencyHeader}>
         <Text style={styles.emergencyTitle}>EMERGENCY RESPONSE</Text>
         <Text style={styles.emergencySub}>
@@ -215,5 +225,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.primaryLight,
     marginTop: 2
+  },
+  topBackRow: {
+    marginBottom: 12,
+    alignSelf: 'flex-start'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  backBtnText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

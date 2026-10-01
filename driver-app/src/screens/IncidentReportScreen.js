@@ -77,6 +77,16 @@ export default function IncidentReportScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.topBackRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.heading}>Report Incident / Damage</Text>
       <Text style={styles.subheading}>
         Report accidents, bike breakdowns, or traffic issues for legal & insurance recording
@@ -256,5 +266,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     lineHeight: 16
+  },
+  topBackRow: {
+    marginBottom: 12,
+    alignSelf: 'flex-start'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  backBtnText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

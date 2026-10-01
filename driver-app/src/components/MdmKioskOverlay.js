@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,12 @@ import {
   TextInput,
   Alert,
   Linking,
-  ScrollView
+  ScrollView,
+  Vibration
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { colors } from '../utils/colors';
-import { verifyAdminExitPin } from '../services/deviceMdmService';
+import { verifyAdminExitPin, clearRemoteAlarm } from '../services/deviceMdmService';
 
 export default function MdmKioskOverlay({
   restrictionState,
@@ -24,10 +26,47 @@ export default function MdmKioskOverlay({
   const [adminPin, setAdminPin] = useState('');
   const [pinError, setPinError] = useState('');
 
+  const [alarmDismissed, setAlarmDismissed] = useState(false);
+
   const isRestricted = restrictionState?.isRestricted;
+  const rawAlarm = !!restrictionState?.alarm;
+  const alarmTimestamp = restrictionState?.deviceData?.remoteCommands?.alarmTriggeredAt || null;
+
+  useEffect(() => {
+    if (rawAlarm) {
+      setAlarmDismissed(false);
+    }
+  }, [rawAlarm, alarmTimestamp]);
+
+  const isAlarm = rawAlarm && !alarmDismissed;
   const status = restrictionState?.status || 'ACTIVE';
   const customMessage = restrictionState?.remoteMessage;
   const reason = restrictionState?.suspensionReason;
+
+  useEffect(() => {
+    if (isAlarm) {
+      // Pulse emergency vibration
+      Vibration.vibrate([0, 600, 200, 600, 200, 1000], true);
+    } else {
+      Vibration.cancel();
+    }
+    return () => {
+      Vibration.cancel();
+    };
+  }, [isAlarm]);
+
+  const handleStopAlarm = async () => {
+    setAlarmDismissed(true);
+    Vibration.cancel();
+    const deviceId = restrictionState?.deviceData?.deviceId || restrictionState?.deviceData?.id;
+    if (deviceId) {
+      try {
+        await clearRemoteAlarm(deviceId);
+      } catch (e) {
+        console.warn('Error clearing remote alarm:', e);
+      }
+    }
+  };
 
   const handleVerifyPin = () => {
     const configuredPin = restrictionState?.kioskExitPin || mdmPolicy?.adminExitPin || '998877';
@@ -53,25 +92,39 @@ export default function MdmKioskOverlay({
   };
 
   const allowedApps = mdmPolicy?.allowedApplications || [
-    { packageName: 'com.olacabs.driver', appName: 'Ola Driver', scheme: 'oladriver://' },
+    { packageName: 'com.olacabs.oladriver', appName: 'Ola Driver', scheme: 'oladriver://' },
     { packageName: 'com.ubercab.driver', appName: 'Uber Driver', scheme: 'uberdriver://' },
-    { packageName: 'com.rapido.driver', appName: 'Rapido Captain', scheme: 'rapidodriver://' },
+    { packageName: 'com.rapido.rider', appName: 'Rapido Captain', scheme: 'rapido://' },
+    { packageName: 'com.whatsapp', appName: 'WhatsApp', scheme: 'whatsapp://' },
     { packageName: 'com.google.android.apps.maps', appName: 'Google Maps', scheme: 'geo:0,0' }
   ];
 
   const handleLaunchApp = async (app) => {
     try {
+      // 1. Try launching directly via Android intent with package specification
+      const intentUrl = `intent:#Intent;package=${app.packageName};end`;
+      try {
+        await Linking.openURL(intentUrl);
+        return;
+      } catch (_) {}
+
+      // 2. Try launching via app custom scheme (e.g. oladriver://, uberdriver://, rapido://)
       if (app.scheme) {
-        const supported = await Linking.canOpenURL(app.scheme);
-        if (supported) {
+        try {
           await Linking.openURL(app.scheme);
           return;
-        }
+        } catch (_) {}
       }
+
+      // 3. Special fallbacks for Maps / WhatsApp
       if (app.packageName === 'com.google.android.apps.maps') {
         await Linking.openURL('https://maps.google.com');
+      } else if (app.packageName === 'com.whatsapp') {
+        await Linking.openURL('https://wa.me');
       } else {
-        Alert.alert('App Launch', `Opening ${app.appName} (${app.packageName}). In production, Android Enterprise AMAPI launches this package.`);
+        await Linking.openURL(`market://details?id=${app.packageName}`).catch(() => {
+          Alert.alert('App Launch', `Could not open ${app.appName}. Please ensure it is installed on this phone.`);
+        });
       }
     } catch (e) {
       Alert.alert('App Launch', `Could not open ${app.appName}: ${e.message}`);
@@ -80,9 +133,92 @@ export default function MdmKioskOverlay({
 
   return (
     <>
+      {/* 0. EMERGENCY REMOTE SIREN ALARM BEACON */}
+      <Modal
+        visible={isAlarm}
+        transparent={false}
+        animationType="fade"
+      >
+        <View style={styles.alarmContainer}>
+          {/* Audio Synthesizer & MP3 Streamer via WebView */}
+          <View style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}>
+            <WebView
+              originWhitelist={['*']}
+              mediaPlaybackRequiresUserAction={false}
+              allowsInlineMediaPlayback={true}
+              source={{
+                html: `
+                  <!DOCTYPE html>
+                  <html>
+                  <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+                  <body style="background:transparent; margin:0; padding:0;">
+                    <audio id="sirenAud" autoplay loop playsinline src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
+                    <script>
+                      try {
+                        var aud = document.getElementById('sirenAud');
+                        if (aud) {
+                          aud.volume = 1.0;
+                          aud.play().catch(function(){});
+                        }
+                        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) {
+                          var ctx = new AudioCtx();
+                          var osc = ctx.createOscillator();
+                          var gain = ctx.createGain();
+                          osc.type = 'sawtooth';
+                          gain.gain.setValueAtTime(1.0, ctx.currentTime);
+                          osc.connect(gain);
+                          gain.connect(ctx.destination);
+                          osc.start();
+
+                          var freq = 750;
+                          var rising = true;
+                          setInterval(function() {
+                            if (rising) {
+                              freq += 40;
+                              if (freq >= 1350) rising = false;
+                            } else {
+                              freq -= 40;
+                              if (freq <= 720) rising = true;
+                            }
+                            try {
+                              osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                            } catch (e) {}
+                          }, 25);
+                        }
+                      } catch (err) {}
+                    </script>
+                  </body>
+                  </html>
+                `
+              }}
+            />
+          </View>
+
+          <Text style={{ fontSize: 72, marginBottom: 12 }}>🚨</Text>
+          <Text style={styles.alarmTitle}>REMOTE SIREN ALARM</Text>
+          <Text style={styles.alarmSubtitle}>EMERGENCY FLEET BEACON ACTIVE</Text>
+          <View style={styles.alarmCard}>
+            <Text style={styles.alarmMessage}>
+              Depot Admin has activated the emergency siren on this MM Ride fleet terminal.
+            </Text>
+            <Text style={styles.alarmHint}>
+              Phone is emitting emergency locator pulses and transmitting live GPS coordinates.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.stopAlarmBtn}
+            onPress={handleStopAlarm}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.stopAlarmBtnText}>🔕 STOP SIREN ALARM (PHONE FOUND)</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
       {/* 1. NON-DISMISSIBLE REMOTE ENTERPRISE LOCKOUT (If marked SUSPENDED or LOST) */}
       <Modal
-        visible={!!isRestricted}
+        visible={!isAlarm && !!isRestricted}
         transparent={false}
         animationType="fade"
       >
@@ -526,5 +662,68 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#38BDF8',
     fontWeight: '600'
+  },
+  alarmContainer: {
+    flex: 1,
+    backgroundColor: '#7F1D1D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24
+  },
+  alarmTitle: {
+    color: '#FEE2E2',
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textAlign: 'center'
+  },
+  alarmSubtitle: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginTop: 4,
+    marginBottom: 20
+  },
+  alarmCard: {
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    marginBottom: 28,
+    width: '100%'
+  },
+  alarmMessage: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 8
+  },
+  alarmHint: {
+    color: '#FECACA',
+    fontSize: 12,
+    textAlign: 'center'
+  },
+  stopAlarmBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6
+  },
+  stopAlarmBtnText: {
+    color: '#7F1D1D',
+    fontWeight: '900',
+    fontSize: 15,
+    letterSpacing: 0.5
   }
 });

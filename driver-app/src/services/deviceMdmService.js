@@ -188,6 +188,7 @@ export async function startMdmDeviceTelemetry({
           status: data.status,
           suspensionReason: data.suspensionReason || data.lostReason || null,
           remoteMessage: data.remoteCommands?.message || null,
+          alarm: !!data.remoteCommands?.alarm,
           kioskExitPin: data.kioskExitPin || '998877',
           deviceData: data
         });
@@ -293,4 +294,26 @@ export function stopMdmDeviceTelemetry() {
 export function verifyAdminExitPin(enteredPin, configuredPin = '998877') {
   if (!enteredPin) return false;
   return enteredPin.trim() === String(configuredPin).trim() || enteredPin.trim() === '998877';
+}
+
+/**
+ * Stop active Siren Alarm when phone is found
+ */
+export async function clearRemoteAlarm(deviceId) {
+  if (!deviceId) return;
+  try {
+    const updates = {
+      remoteCommands: {
+        alarm: false,
+        alarmClearedAt: new Date().toISOString()
+      },
+      updatedAt: serverTimestamp()
+    };
+    await Promise.all([
+      setDoc(doc(db, 'driverDevices', deviceId), updates, { merge: true }).catch(() => {}),
+      setDoc(doc(db, 'devices', deviceId), updates, { merge: true }).catch(() => {})
+    ]);
+  } catch (err) {
+    console.warn('Failed to clear remote alarm:', err);
+  }
 }

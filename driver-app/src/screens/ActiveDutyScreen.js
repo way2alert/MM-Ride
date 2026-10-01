@@ -21,9 +21,11 @@ import { logGpsBreadcrumb, uploadVerificationSelfie, confirmIdentityChallenge, s
 import { processGigNotification } from '../services/gigRideWatcher';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
+import QuickRideLoggerModal from '../components/QuickRideLoggerModal';
 
 export default function ActiveDutyScreen({ navigation }) {
   const { 
+    currentUser,
     driverProfile, 
     assignedBike, 
     activeDutySession, 
@@ -32,6 +34,8 @@ export default function ActiveDutyScreen({ navigation }) {
     systemSettings,
     todayDutyMinutes 
   } = useDriver();
+
+  const driverId = currentUser?.uid || driverProfile?.id;
 
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
   const [idleAlertDoc, setIdleAlertDoc] = useState(null);
@@ -71,6 +75,46 @@ export default function ActiveDutyScreen({ navigation }) {
   const [highSpeedTimestamp, setHighSpeedTimestamp] = useState(0);
   const [showWelfareModal, setShowWelfareModal] = useState(false);
   const [welfareCountdown, setWelfareCountdown] = useState(60);
+
+  // Quick Floating Ride Logger State
+  const [showQuickRideModal, setShowQuickRideModal] = useState(false);
+  const [shiftRides, setShiftRides] = useState([]);
+
+  // Real-time listener for today's shift ride entries
+  useEffect(() => {
+    if (!driverId) return;
+    try {
+      const q = query(
+        collection(db, 'shiftRideEntries'),
+        where('driverId', '==', driverId)
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        const rides = [];
+        const todayPrefix = new Date().toISOString().split('T')[0];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          if (
+            (activeDutySession?.id && data.dutyId === activeDutySession.id) ||
+            (data.timestamp && data.timestamp.startsWith(todayPrefix))
+          ) {
+            rides.push({ id: d.id, ...data });
+          }
+        });
+        setShiftRides(rides);
+      }, (err) => {
+        console.warn('shiftRideEntries listener warning:', err?.message || err);
+      });
+      return () => unsub();
+    } catch (e) {
+      console.warn('Error setting up shiftRideEntries listener:', e);
+    }
+  }, [driverId, activeDutySession?.id]);
+
+  const totalRidesLogged = shiftRides.length;
+  const totalGrossLogged = shiftRides.reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
+  const totalCashLogged = shiftRides.filter(r => r.paymentMethod === 'CASH').reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
+  const totalUpiLogged = shiftRides.filter(r => r.paymentMethod !== 'CASH').reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
+  const driverEstShare = Math.round(totalGrossLogged * 0.5);
 
   // Continuous Live GPS Heartbeat & Test Ride Movement Telemetry
   useEffect(() => {
@@ -708,31 +752,22 @@ export default function ActiveDutyScreen({ navigation }) {
         <View style={styles.telemetryCard}>
           <View style={styles.telemetryHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <View style={[styles.pulseDot, isSimulatingMovement ? styles.pulseDotActive : styles.pulseDotIdle]} />
+              <View style={[styles.pulseDot, styles.pulseDotActive]} />
               <Text style={styles.telemetryTitle} numberOfLines={1}>
-                {isSimulatingMovement ? 'RIDE ACTIVE (Moving Live)' : 'LIVE GPS TRANSMITTING'}
+                LIVE GPS TRANSMITTING
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              <TouchableOpacity
-                style={[styles.simButton, { backgroundColor: '#1E3A8A', borderColor: '#3B82F6' }]}
-                onPress={() => setShowRideSimModal(true)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.simButtonText, { color: '#93C5FD' }]}>
-                  📲 Gig Ping
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.simButton, isSimulatingMovement && styles.simButtonActive]}
-                onPress={() => setIsSimulatingMovement(!isSimulatingMovement)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.simButtonText, isSimulatingMovement && styles.simButtonTextActive]}>
-                  {isSimulatingMovement ? '⏹️ Stop' : '🏍️ Test Ride'}
-                </Text>
-              </TouchableOpacity>
+            <View style={{
+              backgroundColor: 'rgba(16, 185, 129, 0.15)',
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 6,
+              borderWidth: 1,
+              borderColor: 'rgba(16, 185, 129, 0.3)'
+            }}>
+              <Text style={{ color: '#34D399', fontSize: 11, fontWeight: '700' }}>
+                🟢 Secured • 6s Ping
+              </Text>
             </View>
           </View>
 
@@ -783,6 +818,69 @@ export default function ActiveDutyScreen({ navigation }) {
           <Text style={styles.telemetrySub}>
             Location & speed are broadcast to Admin Live Monitoring every 6 seconds.
           </Text>
+        </View>
+
+        {/* Live Shift Earnings & Ride Tracker Card */}
+        <View style={styles.rideTrackerCard}>
+          <View style={styles.rideTrackerHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 22 }}>⚡</Text>
+              <View>
+                <Text style={styles.rideTrackerTitle}>TODAY'S SHIFT EARNINGS</Text>
+                <Text style={styles.rideTrackerSub}>Ola & Uber rides live counter</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.logRideMiniBtn}
+              onPress={() => setShowQuickRideModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.logRideMiniBtnText}>+ Log Ride ⚡</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.rideTrackerStatsRow}>
+            <View style={styles.rideStatBox}>
+              <Text style={styles.rideStatLabel}>RIDES</Text>
+              <Text style={styles.rideStatVal}>{totalRidesLogged}</Text>
+            </View>
+            <View style={styles.rideStatBox}>
+              <Text style={styles.rideStatLabel}>GROSS FARE</Text>
+              <Text style={[styles.rideStatVal, { color: '#FCD34D' }]}>₹{totalGrossLogged}</Text>
+            </View>
+            <View style={styles.rideStatBox}>
+              <Text style={styles.rideStatLabel}>AAPKA 50%</Text>
+              <Text style={[styles.rideStatVal, { color: '#34D399' }]}>₹{driverEstShare}</Text>
+            </View>
+          </View>
+
+          <View style={styles.paymentSplitRow}>
+            <View style={styles.paymentPillCash}>
+              <Text style={styles.paymentPillCashText}>💵 Cash: ₹{totalCashLogged}</Text>
+            </View>
+            <View style={styles.paymentPillUpi}>
+              <Text style={styles.paymentPillUpiText}>📲 UPI: ₹{totalUpiLogged}</Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <TouchableOpacity
+              style={styles.logRideBigBtn}
+              onPress={() => setShowQuickRideModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.logRideBigBtnText}>⚡ Quick Log Ride (Ola / Uber)</Text>
+            </TouchableOpacity>
+            {totalRidesLogged > 0 && (
+              <TouchableOpacity
+                style={styles.reviewHisaabBtn}
+                onPress={() => navigation?.navigate && navigation.navigate('SubmitDailyEarnings')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.reviewHisaabBtnText}>Hisaab ➔</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Primary Controls */}
@@ -1186,99 +1284,6 @@ export default function ActiveDutyScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Gig Aggregator Ride Ping Simulator Modal (Problem 4) */}
-      <Modal
-        visible={showRideSimModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowRideSimModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { borderColor: '#3B82F6', padding: 20 }]}>
-            <Text style={{ fontSize: 32, marginBottom: 6 }}>🚖</Text>
-            <Text style={[styles.idleTitle, { color: '#93C5FD', fontSize: 16 }]}>
-              Simulate Aggregator Ride Ping
-            </Text>
-            <Text style={[styles.idleTitleHindi, { color: '#CBD5E1', fontSize: 11, marginBottom: 12 }]}>
-              (Ola / Uber / Rapido Notification Listener Test)
-            </Text>
-            <Text style={{ color: '#94A3B8', fontSize: 11, textAlign: 'center', marginBottom: 16, lineHeight: 16 }}>
-              Simulate incoming notifications to test multi-sensor trajectory correlation & offline cash fraud detection.
-            </Text>
-
-            {/* Scenario 1: New Uber Request */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#1E293B',
-                padding: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: '#3B82F6',
-                width: '100%',
-                marginBottom: 10
-              }}
-              onPress={() => handleSimulateGigEvent('UBER', 'RIDE_REQUEST', 'New Ride Request: Anna Nagar to T. Nagar • ₹240')}
-            >
-              <Text style={{ color: '#93C5FD', fontWeight: '800', fontSize: 12 }}>
-                1. 📲 Uber Ride Request (₹240 • 7.8 km)
-              </Text>
-              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
-                Simulates booking notification received on phone.
-              </Text>
-            </TouchableOpacity>
-
-            {/* Scenario 2: Customer Cancelled Ride */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                padding: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: '#EF4444',
-                width: '100%',
-                marginBottom: 10
-              }}
-              onPress={() => handleSimulateGigEvent('UBER', 'RIDE_CANCELLED', 'Rider cancelled booking. No cancellation fee.')}
-            >
-              <Text style={{ color: '#F87171', fontWeight: '800', fontSize: 12 }}>
-                2. ❌ Customer Cancelled Ride ("Direct Cash" Attempt)
-              </Text>
-              <Text style={{ color: '#FECACA', fontSize: 11, marginTop: 2 }}>
-                Customer cancels in app. If bike subsequently moves &gt;2km, offline cash fraud is flagged!
-              </Text>
-            </TouchableOpacity>
-
-            {/* Scenario 3: Completed Ride */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: '#1E293B',
-                padding: 12,
-                borderRadius: 10,
-                borderWidth: 1,
-                borderColor: '#10B981',
-                width: '100%',
-                marginBottom: 14
-              }}
-              onPress={() => handleSimulateGigEvent('OLA', 'RIDE_COMPLETED', 'Ride Completed. Cash to collect: ₹180')}
-            >
-              <Text style={{ color: '#34D399', fontWeight: '800', fontSize: 12 }}>
-                3. 🏁 Normal Completed Ride (₹180)
-              </Text>
-              <Text style={{ color: '#94A3B8', fontSize: 11, marginTop: 2 }}>
-                Simulates legitimate trip completion recorded in platform summary.
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowRideSimModal(false)}
-              style={{ padding: 8, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#94A3B8', fontWeight: '600', fontSize: 12 }}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* Sudden Deceleration / Safety Welfare Modal (Problem 11) */}
       <Modal
         visible={showWelfareModal}
@@ -1373,6 +1378,43 @@ export default function ActiveDutyScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Bottom Quick Action Pill */}
+      <View style={styles.floatingActionBar}>
+        <TouchableOpacity
+          style={styles.floatingActionBtn}
+          onPress={() => setShowQuickRideModal(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.floatingActionContent}>
+            <View style={styles.floatingBoltBadge}>
+              <Text style={{ fontSize: 16 }}>⚡</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.floatingActionTitle}>
+                {totalRidesLogged > 0 ? `Log Ride #${totalRidesLogged + 1} (Cash / UPI)` : '⚡ Log Completed Ride'}
+              </Text>
+              <Text style={styles.floatingActionSub} numberOfLines={1}>
+                {totalRidesLogged > 0
+                  ? `${totalRidesLogged} rides • ₹${totalGrossLogged} earned today (50%: ₹${driverEstShare})`
+                  : 'Tap after passenger drop-off • 2 sec quick save'}
+              </Text>
+            </View>
+            <View style={styles.floatingActionArrow}>
+              <Text style={{ color: '#0F172A', fontWeight: '900', fontSize: 16 }}>+</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Quick Ride Logger Modal */}
+      <QuickRideLoggerModal
+        visible={showQuickRideModal}
+        onClose={() => setShowQuickRideModal(false)}
+        driverId={driverId}
+        dutyId={activeDutySession?.id}
+        currentLocation={currentLocation}
+      />
     </View>
   );
 }
@@ -1384,7 +1426,7 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 18,
-    paddingBottom: 40
+    paddingBottom: 110
   },
   speedCard: {
     backgroundColor: colors.surface,
@@ -1608,5 +1650,187 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
     lineHeight: 16
+  },
+  rideTrackerCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    marginBottom: 16,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  rideTrackerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B'
+  },
+  rideTrackerTitle: {
+    color: '#FCD34D',
+    fontWeight: '900',
+    fontSize: 13,
+    letterSpacing: 0.5
+  },
+  rideTrackerSub: {
+    color: '#94A3B8',
+    fontSize: 10,
+    marginTop: 1
+  },
+  logRideMiniBtn: {
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8
+  },
+  logRideMiniBtnText: {
+    color: '#0F172A',
+    fontWeight: '900',
+    fontSize: 12
+  },
+  rideTrackerStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10
+  },
+  rideStatBox: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  rideStatLabel: {
+    color: '#94A3B8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    marginBottom: 2
+  },
+  rideStatVal: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '900'
+  },
+  paymentSplitRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4
+  },
+  paymentPillCash: {
+    flex: 1,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center'
+  },
+  paymentPillCashText: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  paymentPillUpi: {
+    flex: 1,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center'
+  },
+  paymentPillUpiText: {
+    color: '#60A5FA',
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  logRideBigBtn: {
+    flex: 1,
+    backgroundColor: '#F59E0B',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  logRideBigBtnText: {
+    color: '#0F172A',
+    fontWeight: '900',
+    fontSize: 13
+  },
+  reviewHisaabBtn: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#475569',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  reviewHisaabBtnText: {
+    color: '#93C5FD',
+    fontWeight: '800',
+    fontSize: 12
+  },
+  floatingActionBar: {
+    position: 'absolute',
+    bottom: 20,
+    left: 16,
+    right: 16,
+    zIndex: 99
+  },
+  floatingActionBtn: {
+    backgroundColor: '#10B981',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 1.5,
+    borderColor: '#34D399'
+  },
+  floatingActionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  floatingBoltBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#064E3B',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  floatingActionTitle: {
+    color: '#0F172A',
+    fontWeight: '900',
+    fontSize: 14
+  },
+  floatingActionSub: {
+    color: '#064E3B',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 1
+  },
+  floatingActionArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#34D399',
+    alignItems: 'center',
+    justifyContent: 'center'
   }
 });

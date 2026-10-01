@@ -205,6 +205,23 @@ export default function BikeHandoverScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {/* Top Back Navigation Row */}
+      <View style={styles.topBackRow}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => {
+            if (navigation?.canGoBack && navigation.canGoBack()) {
+              navigation.goBack();
+            } else if (navigation?.navigate) {
+              navigation.navigate('VerificationStatus');
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backBtnText}>← Back</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Header */}
       <Text style={styles.heading}>Bike Custody & Handover Inspection</Text>
       <Text style={styles.subheading}>
@@ -243,9 +260,9 @@ export default function BikeHandoverScreen({ navigation }) {
         </Text>
       </View>
 
-      {/* SECTION 1: Meter & Fuel Readings */}
+      {/* SECTION 1: Meter Reading */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>1. Current Meter & Fuel Level</Text>
+        <Text style={styles.cardTitle}>1. Current Odometer Reading</Text>
 
         <Text style={styles.label}>Odometer Reading (km) *</Text>
         <TextInput
@@ -255,16 +272,6 @@ export default function BikeHandoverScreen({ navigation }) {
           placeholderTextColor={colors.textMuted}
           value={odometer}
           onChangeText={setOdometer}
-        />
-
-        <Text style={styles.label}>Fuel Level / Battery Charge (%) *</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="number-pad"
-          placeholder="e.g. 90"
-          placeholderTextColor={colors.textMuted}
-          value={fuelCharge}
-          onChangeText={setFuelCharge}
         />
       </View>
 
@@ -841,5 +848,24 @@ const styles = StyleSheet.create({
     color: colors.primaryLight,
     fontSize: 12,
     fontWeight: '600'
+  },
+  topBackRow: {
+    marginBottom: 14,
+    alignSelf: 'flex-start'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border
+  },
+  backBtnText: {
+    color: colors.primaryLight,
+    fontSize: 13,
+    fontWeight: '700'
   }
 });

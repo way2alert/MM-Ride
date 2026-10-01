@@ -4,7 +4,7 @@ import { doc, onSnapshot, getDoc, collection, query, where, getDocs, updateDoc }
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import { auth, db } from '../firebase/config';
 import { logGpsBreadcrumb, bindDriverDevice } from '../firebase/api';
 import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics, updateMdmTelemetryLocation } from '../services/deviceMdmService';
@@ -150,25 +150,34 @@ export function DriverProvider({ children }) {
           return;
         }
 
-        // Request background permission with prominent in-app disclosure (Google Play Policy requirement)
+        // Request background permission with mandatory fleet disclosure (Compulsory for active duty)
         if (activeDutySession?.status === 'ACTIVE') {
           try {
             const bgStatus = await Location.getBackgroundPermissionsAsync();
             if (bgStatus.status !== 'granted') {
               Alert.alert(
-                'Background Location Access 📍',
-                'MM Ride collects real-time location data during your active shift to enable ride tracking, safety telemetry, and depot return geofencing even when the app is closed or running in the background.',
+                'Shift Location Tracking Required 📍',
+                'MM Ride requires location access set to "Allow all the time" during your active shift so that safety monitoring and depot geofencing work even when you are using Ola/Uber or when the screen is locked.\n\n(Tracking automatically stops when you end your shift).',
                 [
-                  { text: 'Not Now', style: 'cancel' },
                   {
-                    text: 'Allow on Shift',
+                    text: 'Allow on Shift (Compulsory)',
                     onPress: async () => {
                       try {
-                        await Location.requestBackgroundPermissionsAsync();
+                        const { status: newStatus } = await Location.requestBackgroundPermissionsAsync();
+                        if (newStatus !== 'granted') {
+                          Alert.alert(
+                            'Permission Required to Work',
+                            'Background location is mandatory to operate company fleet vehicles. Please choose "Allow all the time" in app settings.',
+                            [
+                              { text: 'Open Settings', onPress: () => Linking.openSettings() }
+                            ]
+                          );
+                        }
                       } catch (e) {}
                     }
                   }
-                ]
+                ],
+                { cancelable: false }
               );
             }
           } catch (e) {
@@ -220,7 +229,7 @@ export function DriverProvider({ children }) {
                 longitude: coords.longitude,
                 speed: speedKmh,
                 isMock: loc.mocked || false,
-                deviceId: Device.osBuildId || 'android_device'
+                deviceId: driverProfile?.boundDeviceId || Device.osBuildId || 'android_device'
               }).catch(err => console.warn('Breadcrumb log error:', err.message));
             }
           }
@@ -332,7 +341,11 @@ export function DriverProvider({ children }) {
         visible={privacyModalVisible}
         onClose={() => setPrivacyModalVisible(false)}
       />
-      <GlobalSecurityOverlay />
+      <GlobalSecurityOverlay 
+        driverProfile={driverProfile}
+        activeDutySession={activeDutySession}
+        currentLocation={currentLocation}
+      />
       {children}
     </DriverContext.Provider>
   );

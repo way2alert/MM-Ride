@@ -1,24 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Smartphone, 
-  ShieldCheck, 
-  ShieldAlert, 
-  Battery, 
-  BatteryCharging, 
-  Wifi, 
-  Radio, 
-  MapPin, 
-  User, 
-  QrCode, 
-  Settings, 
-  Lock, 
-  AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
-  Search, 
-  Filter, 
-  RefreshCw, 
-  Plus, 
+import {
+  Smartphone,
+  ShieldCheck,
+  ShieldAlert,
+  Battery,
+  BatteryCharging,
+  Wifi,
+  Radio,
+  MapPin,
+  User,
+  QrCode,
+  Settings,
+  Lock,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Search,
+  Filter,
+  RefreshCw,
+  Plus,
   ExternalLink,
   Volume2,
   HardDrive,
@@ -29,14 +29,14 @@ import {
   Printer,
   Trash2
 } from 'lucide-react';
-import { 
-  collection, 
-  doc, 
-  onSnapshot, 
-  updateDoc, 
-  setDoc, 
+import {
+  collection,
+  doc,
+  onSnapshot,
+  updateDoc,
+  setDoc,
   deleteDoc,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import QRCode from 'qrcode';
@@ -47,7 +47,7 @@ export default function Devices({ onSelectDriver }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDemoData, setShowDemoData] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('ALL');
-  
+
   // Modals
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [statusModal, setStatusModal] = useState({ isOpen: false, device: null, targetStatus: '', reason: '' });
@@ -380,7 +380,7 @@ export default function Devices({ onSelectDriver }) {
     if (!confirm(`Are you sure you want to remove ${device.model || device.id} (${device.id}) from the fleet list?`)) return;
     try {
       await deleteDoc(doc(db, 'driverDevices', device.id));
-      await deleteDoc(doc(db, 'devices', device.id)).catch(() => {});
+      await deleteDoc(doc(db, 'devices', device.id)).catch(() => { });
       setDevices(prev => prev.filter(d => d.id !== device.id));
     } catch (e) {
       alert(`Could not remove device: ${e.message}`);
@@ -502,11 +502,11 @@ export default function Devices({ onSelectDriver }) {
           driverStatusUpdate.isSuspended = false;
           driverStatusUpdate.suspensionReason = null;
         }
-        await updateDoc(doc(db, 'drivers', targetDriverId), driverStatusUpdate).catch(() => {});
+        await updateDoc(doc(db, 'drivers', targetDriverId), driverStatusUpdate).catch(() => { });
       }
 
-      await setDoc(doc(db, 'driverDevices', statusModal.device.id), updates, { merge: true }).catch(() => {});
-      await setDoc(doc(db, 'devices', statusModal.device.id), updates, { merge: true }).catch(() => {});
+      await setDoc(doc(db, 'driverDevices', statusModal.device.id), updates, { merge: true }).catch(() => { });
+      await setDoc(doc(db, 'devices', statusModal.device.id), updates, { merge: true }).catch(() => { });
 
       // Audit log
       await setDoc(doc(collection(db, 'auditLogs')), {
@@ -537,29 +537,41 @@ export default function Devices({ onSelectDriver }) {
   // Remote MDM Commands
   const handleTriggerRemoteCommand = async (device, commandType) => {
     try {
+      const devDriverRef = doc(db, 'driverDevices', device.id);
       const devRef = doc(db, 'devices', device.id);
+
+      const updates = {
+        updatedAt: serverTimestamp()
+      };
+
       if (commandType === 'ALARM') {
-        await updateDoc(devRef, {
-          'remoteCommands.alarm': true,
-          updatedAt: serverTimestamp()
-        });
-        alert(`🚨 Remote Siren Alarm sent to ${device.id}! Phone will emit emergency buzzer on next check.`);
+        updates.remoteCommands = {
+          ...(device.remoteCommands || {}),
+          alarm: true,
+          alarmTriggeredAt: new Date().toISOString()
+        };
       } else if (commandType === 'SYNC_POLICY') {
-        await updateDoc(devRef, {
-          policyStatus: 'COMPLIANT',
-          lastPolicySync: new Date().toISOString(),
-          updatedAt: serverTimestamp()
-        });
-        alert(`⚡ Immediate MDM Policy Sync dispatched to ${device.id}!`);
+        updates.policyStatus = 'COMPLIANT';
+        updates.lastPolicySync = new Date().toISOString();
       } else if (commandType === 'RESET_PIN') {
         const newPin = Math.floor(100000 + Math.random() * 900000).toString();
-        await updateDoc(devRef, {
-          kioskExitPin: newPin,
-          updatedAt: serverTimestamp()
-        });
-        alert(`🔑 New Master Admin Exit PIN for ${device.id} is: ${newPin}`);
+        updates.kioskExitPin = newPin;
+      }
+
+      await Promise.all([
+        setDoc(devDriverRef, updates, { merge: true }),
+        setDoc(devRef, updates, { merge: true })
+      ]);
+
+      if (commandType === 'ALARM') {
+        alert(`🚨 Remote Siren Alarm sent to ${device.id}! Phone will emit emergency buzzer on next check.`);
+      } else if (commandType === 'SYNC_POLICY') {
+        alert(`⚡ Immediate MDM Policy Sync dispatched to ${device.id}!`);
+      } else if (commandType === 'RESET_PIN') {
+        alert(`🔑 New Master Admin Exit PIN for ${device.id} is: ${updates.kioskExitPin}`);
       }
     } catch (err) {
+      console.error('Remote command dispatch error:', err);
       alert(`Command dispatch error: ${err.message}`);
     }
   };
@@ -627,7 +639,7 @@ export default function Devices({ onSelectDriver }) {
 
   // Filtered devices
   const filteredDevices = devices.filter(d => {
-    const matchesSearch = 
+    const matchesSearch =
       d.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.serialNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -923,7 +935,7 @@ export default function Devices({ onSelectDriver }) {
                       <td>
                         {d.assignedDriverName ? (
                           <div>
-                            <div 
+                            <div
                               style={{ fontWeight: 600, color: '#38BDF8', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={() => onSelectDriver && onSelectDriver({ id: d.assignedDriverId, fullName: d.assignedDriverName })}
                             >
@@ -949,13 +961,13 @@ export default function Devices({ onSelectDriver }) {
                           )}
                           <span style={{ fontWeight: 700, color: batteryColor, fontSize: '0.85rem' }}>{batteryLevel}%</span>
                         </div>
-                        <div style={{ 
-                          width: 60, 
-                          height: 4, 
-                          background: 'rgba(255, 255, 255, 0.1)', 
-                          borderRadius: 2, 
-                          marginTop: 4, 
-                          overflow: 'hidden' 
+                        <div style={{
+                          width: 60,
+                          height: 4,
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          borderRadius: 2,
+                          marginTop: 4,
+                          overflow: 'hidden'
                         }}>
                           <div style={{ width: `${batteryLevel}%`, height: '100%', background: batteryColor }} />
                         </div>
@@ -1066,8 +1078,8 @@ export default function Devices({ onSelectDriver }) {
                 <Lock size={18} color="#EF4444" />
                 <span>Update Terminal Status: {statusModal.device?.id}</span>
               </div>
-              <button 
-                className="btn-icon" 
+              <button
+                className="btn-icon"
                 onClick={() => setStatusModal({ isOpen: false, device: null, targetStatus: '', reason: '' })}
               >
                 ✕
@@ -1113,15 +1125,15 @@ export default function Devices({ onSelectDriver }) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-secondary"
                 onClick={() => setStatusModal({ isOpen: false, device: null, targetStatus: '', reason: '' })}
               >
                 Cancel
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-primary"
                 onClick={handleUpdateDeviceStatus}
               >
@@ -1456,8 +1468,8 @@ export default function Devices({ onSelectDriver }) {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   const printWin = window.open('', '_blank');

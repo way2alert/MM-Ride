@@ -7,10 +7,22 @@ export default function Header({
   subtitle,
   onSosPress,
   onProfilePress,
-  showSos = true
+  showSos = true,
+  showBack = false,
+  onBackPress
 }) {
   return (
     <View style={styles.header}>
+      {showBack && (
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBackPress}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backButtonText}>← Back</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.titleContainer}>
         <Text style={styles.title}>{title}</Text>
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
@@ -52,6 +64,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border
+  },
+  backButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: 12
+  },
+  backButtonText: {
+    color: colors.primaryLight,
+    fontWeight: '700',
+    fontSize: 12
   },
   titleContainer: {
     flex: 1

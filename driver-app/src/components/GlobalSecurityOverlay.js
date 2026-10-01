@@ -11,12 +11,14 @@ import {
   StyleSheet
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useDriver } from '../context/DriverContext';
 import { uploadVerificationSelfie, confirmIdentityChallenge } from '../firebase/api';
 import { colors } from '../utils/colors';
 
-export default function GlobalSecurityOverlay() {
-  const { driverProfile, activeDutySession, currentLocation } = useDriver();
+export default function GlobalSecurityOverlay({
+  driverProfile,
+  activeDutySession,
+  currentLocation
+} = {}) {
 
   const isImmobilized = Boolean(driverProfile?.engineImmobilized);
   const pendingChallenge = driverProfile?.pendingVerification && driverProfile.pendingVerification.status === 'PENDING'

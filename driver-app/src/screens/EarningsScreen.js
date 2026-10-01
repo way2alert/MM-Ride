@@ -63,6 +63,8 @@ export default function EarningsScreen({ navigation }) {
       <Header
         title="EARNINGS (Kamai Ledger)"
         subtitle="50% Worker Share Ledger"
+        showBack={true}
+        onBackPress={() => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home'))}
         onSosPress={() => navigation?.navigate && navigation.navigate('EmergencySOS')}
         onProfilePress={() => navigation?.navigate && navigation.navigate('Profile')}
       />

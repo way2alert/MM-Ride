@@ -18,6 +18,8 @@ build/
 *.p12
 *.key
 *.mobileprovision
+*.apk
+*.aab
 
 # Firebase
 .firebase/

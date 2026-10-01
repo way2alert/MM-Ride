@@ -10,6 +10,7 @@ import {
   where,
   orderBy,
   limit,
+  increment,
   serverTimestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
@@ -353,6 +354,7 @@ export async function requestEndDuty({
   returnGps,
   returnOdometer,
   returnFuelCharge,
+  returnFuelLitres,
   bikeCondition = 'GOOD',
   damageReported = false,
   damageNotes = '',
@@ -381,64 +383,87 @@ export async function requestEndDuty({
   // Calculate cumulative breaks taken during this shift
   let totalBreakMinutes = 0;
   try {
-    const breaksSnap = await getDocs(
-      query(collection(db, 'breaks'), where('dutyId', '==', dutyId))
-    );
+    const qParts = [where('dutyId', '==', dutyId)];
+    if (driverId) qParts.unshift(where('driverId', '==', driverId));
+    const breaksSnap = await getDocs(query(collection(db, 'breaks'), ...qParts));
     breaksSnap.forEach(b => {
       totalBreakMinutes += (b.data().durationMinutes || 0);
     });
   } catch (e) {
-    console.warn('Breaks query error:', e);
+    // Non-fatal fallback for breaks count
   }
 
   const netWorkingMinutes = Math.max(0, totalMinutes - totalBreakMinutes);
   const netWorkingHours = Number((netWorkingMinutes / 60).toFixed(2));
 
+  const cleanGps = (returnGps && returnGps.latitude && returnGps.longitude) ? {
+    latitude: Number(returnGps.latitude),
+    longitude: Number(returnGps.longitude)
+  } : null;
+
   await updateDoc(doc(db, 'dutySessions', dutyId), {
     status: 'COMPLETED',
     endTime,
-    totalMinutes,
-    totalHours,
-    totalBreakMinutes,
-    netWorkingMinutes,
-    netWorkingHours,
-    returnGps,
-    returnOdometer: Number(returnOdometer),
-    returnFuelCharge: Number(returnFuelCharge),
-    totalDistanceKm: totalDistance,
-    returnBikeCondition: bikeCondition,
-    damageReported,
-    damageNotes,
-    emergencyOverride,
-    emergencyOverrideReason,
+    totalMinutes: Number(totalMinutes) || 0,
+    totalHours: Number(totalHours) || 0,
+    totalBreakMinutes: Number(totalBreakMinutes) || 0,
+    netWorkingMinutes: Number(netWorkingMinutes) || 0,
+    netWorkingHours: Number(netWorkingHours) || 0,
+    returnGps: cleanGps,
+    returnOdometer: Number(returnOdometer) || Number(pickupOdometer) || 0,
+    returnFuelCharge: Number(returnFuelCharge) || 0,
+    returnFuelLitres: Number(returnFuelLitres || returnFuelCharge) || 0,
+    totalDistanceKm: Number(totalDistance) || 0,
+    returnBikeCondition: bikeCondition || 'GOOD',
+    damageReported: Boolean(damageReported),
+    damageNotes: damageNotes || '',
+    emergencyOverride: Boolean(emergencyOverride),
+    emergencyOverrideReason: emergencyOverrideReason || '',
     completedAt: serverTimestamp()
   });
 
-  await updateDoc(doc(db, 'drivers', driverId), {
-    currentDutyId: null,
-    isCurrentlyOnDuty: false,
-    lastDutyEndedAt: endTime
-  });
+  if (driverId) {
+    try {
+      await updateDoc(doc(db, 'drivers', driverId), {
+        currentDutyId: null,
+        isCurrentlyOnDuty: false,
+        lastDutyEndedAt: endTime
+      });
+    } catch (driverErr) {
+      console.warn('Driver state update warning:', driverErr);
+    }
+  }
 
   // Strict controlled state transition: ACTIVE -> RETURNED or MAINTENANCE
-  await updateDoc(doc(db, 'bikes', bikeId), {
-    status: damageReported ? 'MAINTENANCE' : 'RETURNED',
-    currentOdometer: Number(returnOdometer),
-    currentFuelCharge: Number(returnFuelCharge),
-    lastDutyId: null
-  });
+  if (bikeId) {
+    try {
+      await updateDoc(doc(db, 'bikes', bikeId), {
+        status: damageReported ? 'MAINTENANCE' : 'RETURNED',
+        currentOdometer: Number(returnOdometer) || Number(pickupOdometer) || 0,
+        currentFuelCharge: Number(returnFuelCharge) || 0,
+        currentFuelLitres: Number(returnFuelLitres || returnFuelCharge) || 0,
+        lastDutyId: null
+      });
+    } catch (bikeErr) {
+      console.warn('Bike status transition error (non-fatal):', bikeErr);
+    }
+  }
 
   if (damageReported) {
-    await addDoc(collection(db, 'damageReports'), {
-      dutyId,
-      driverId,
-      bikeId,
-      condition: bikeCondition,
-      description: damageNotes,
-      status: 'PENDING_INSPECTION',
-      timestamp: endTime,
-      createdAt: serverTimestamp()
-    });
+    try {
+      await addDoc(collection(db, 'damageReports'), {
+        dutyId: dutyId || null,
+        driverId: driverId || null,
+        bikeId: bikeId || null,
+        condition: bikeCondition || 'FAIR',
+        description: damageNotes || 'Damage reported on return',
+        status: 'PENDING_INSPECTION',
+        timestamp: endTime,
+        createdAt: serverTimestamp()
+      });
+    } catch (dmgErr) {
+      console.warn('Damage report logging warning:', dmgErr);
+    }
   }
 }
 
@@ -543,10 +568,13 @@ export async function submitDailyRideEarnings({
   driverId, 
   date, 
   grossIncome, 
-  platformCharges, 
+  platformCharges = 0, 
   completedRidesCount = 0,
   cancelledRidesCount = 0,
   cashRidesCollected = 0,
+  olaDetails = null,
+  uberDetails = null,
+  rapidoDetails = null,
   blob, 
   uri, 
   fileName 
@@ -568,10 +596,10 @@ export async function submitDailyRideEarnings({
     }
   }
 
-  const subRef = await addDoc(collection(db, 'dailyEarningsSubmissions'), {
+  const subData = {
     driverId,
     date: date || new Date().toISOString().split('T')[0],
-    grossIncome: Number(grossIncome),
+    grossIncome: Number(grossIncome) || 0,
     platformCharges: Number(platformCharges || 0),
     completedRidesCount: Number(completedRidesCount || 0),
     cancelledRidesCount: Number(cancelledRidesCount || 0),
@@ -580,9 +608,85 @@ export async function submitDailyRideEarnings({
     status: 'PENDING',
     submittedAt: new Date().toISOString(),
     createdAt: serverTimestamp()
-  });
+  };
+
+  if (olaDetails) subData.olaDetails = olaDetails;
+  if (uberDetails) subData.uberDetails = uberDetails;
+  if (rapidoDetails) subData.rapidoDetails = rapidoDetails;
+
+  const subRef = await addDoc(collection(db, 'dailyEarningsSubmissions'), subData);
 
   return subRef.id;
+}
+
+/**
+ * Log individual completed ride entry from floating overlay widget during active shift
+ */
+export async function logShiftRideEntry({
+  driverId,
+  dutyId,
+  platform = 'OLA',
+  paymentMethod = 'CASH',
+  fare,
+  location
+}) {
+  const fareNum = Number(fare) || 0;
+  const isCash = paymentMethod === 'CASH';
+
+  const entryRef = await addDoc(collection(db, 'shiftRideEntries'), {
+    driverId,
+    dutyId: dutyId || null,
+    platform: platform.toUpperCase(),
+    paymentMethod: isCash ? 'CASH' : 'UPI',
+    fare: fareNum,
+    location: location || null,
+    timestamp: new Date().toISOString(),
+    createdAt: serverTimestamp()
+  });
+
+  // Optionally increment running duty session telemetry counters
+  if (dutyId) {
+    try {
+      const dutyRef = doc(db, 'dutySessions', dutyId);
+      const updates = {
+        totalRidesLogged: increment(1),
+        grossEarningsLogged: increment(fareNum),
+        lastRideLoggedAt: new Date().toISOString()
+      };
+      if (isCash) {
+        updates.cashEarningsLogged = increment(fareNum);
+      } else {
+        updates.upiEarningsLogged = increment(fareNum);
+      }
+      await updateDoc(dutyRef, updates);
+    } catch (e) {
+      console.warn('Duty counter increment non-fatal warning:', e);
+    }
+  }
+
+  return entryRef.id;
+}
+
+/**
+ * Get all ride entries for a shift or driver to auto-fill daily hisaab
+ */
+export async function getShiftRideEntries({ driverId, dutyId }) {
+  if (!driverId) return [];
+  try {
+    const qParts = [where('driverId', '==', driverId)];
+    if (dutyId) {
+      qParts.push(where('dutyId', '==', dutyId));
+    }
+    const snap = await getDocs(query(collection(db, 'shiftRideEntries'), ...qParts));
+    const entries = [];
+    snap.forEach(d => {
+      entries.push({ id: d.id, ...d.data() });
+    });
+    return entries;
+  } catch (err) {
+    console.warn('Error fetching shift ride entries:', err);
+    return [];
+  }
 }
 
 /**

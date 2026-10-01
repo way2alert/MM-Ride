@@ -138,7 +138,7 @@ service cloud.firestore {
         isAuthenticated() &&
         (
           (resource.data.status == 'AVAILABLE' && request.resource.data.status == 'ASSIGNED' && request.resource.data.assignedDriverId == request.auth.uid) ||
-          (resource.data.assignedDriverId == request.auth.uid && request.resource.data.status in ['ACTIVE', 'ASSIGNED'])
+          (resource.data.assignedDriverId == request.auth.uid && request.resource.data.status in ['ACTIVE', 'ASSIGNED', 'RETURNED', 'MAINTENANCE'])
         )
       );
       allow write: if isOperations();
@@ -186,6 +186,12 @@ service cloud.firestore {
     }
 
     match /platformRideEvents/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /shiftRideEntries/{entryId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
       allow delete: if isAdmin();
@@ -365,19 +371,16 @@ service cloud.firestore {
 
     // Device Bindings & Security
     match /driverDevices/{deviceId} {
-      allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
-      );
-      allow create, update: if isAuthenticated() && (
-        request.resource.data.driverId == request.auth.uid || isAdmin()
-      );
+      allow read: if true;
+      allow create, update: if isAuthenticated();
       allow delete: if isAdmin();
     }
 
     // Enterprise Fleet Devices (Company MDM Dedicated Terminals)
     match /devices/{deviceId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated();
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     // Immutable Audit Logs (Append-Only)
