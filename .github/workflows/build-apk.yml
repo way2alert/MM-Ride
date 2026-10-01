@@ -20,9 +20,6 @@ jobs:
           distribution: 'temurin'
           java-version: 17
 
-      - name: 📱 Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: 🟢 Set up Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -40,7 +37,9 @@ jobs:
 
       - name: 🔨 Build Standalone APK with Gradle
         working-directory: ./driver-app/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - name: 📤 Upload Installable APK Artifact
         uses: actions/upload-artifact@v4
