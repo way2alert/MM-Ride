@@ -18,6 +18,7 @@
     "expo-constants": "~57.0.19",
     "expo-device": "~57.0.2",
     "expo-image-picker": "~57.0.20",
+    "expo-keep-awake": "~57.0.2",
     "expo-location": "~57.0.20",
     "expo-network": "^57.0.2",
     "expo-status-bar": "~57.0.1",

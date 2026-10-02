@@ -87,8 +87,9 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
       const isMoving = speed > 0;
 
       const driverName = driver.fullName || 'Driver';
-      const speedText = isMoving ? `${speed} km/h` : 'Idle';
-      const pillClass = isOverspeed ? 'pill-overspeed' : isMoving ? 'pill-moving' : 'pill-idle';
+      const hasLiveRide = driver.lastPlatformRideEvent?.eventType === 'RIDE_ACCEPTED';
+      const speedText = hasLiveRide ? `🚖 ${driver.lastPlatformRideEvent.platform || 'ON TRIP'}` : isMoving ? `${speed} km/h` : (driver.isCurrentlyOnDuty && !isOutdated) ? '🟢 On Duty' : 'Idle';
+      const pillClass = isOverspeed ? 'pill-overspeed' : hasLiveRide ? 'pill-moving' : isMoving ? 'pill-moving' : (driver.isCurrentlyOnDuty && !isOutdated) ? 'pill-moving' : 'pill-idle';
       const bikeClass = isOverspeed ? 'bike-overspeed' : isMoving ? 'bike-moving' : 'bike-idle';
 
       // Custom Floating Tag Marker: Prominently shows driver's name on top of the bike
@@ -119,7 +120,7 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
               ${driverName}
             </div>
             <span style="font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: ${isMoving ? '#dcfce7; color: #166534;' : '#fef3c7; color: #92400e;'}">
-              ${isMoving ? '⚡ MOVING' : '⏸️ STATIONARY'}
+              ${isMoving ? '⚡ MOVING' : (driver.isCurrentlyOnDuty && !isOutdated) ? '🟢 ON DUTY' : '⏸️ STATIONARY'}
             </span>
           </div>
           <div style="color: #64748b; font-size: 11px; margin-bottom: 8px;">Mobile: <b>${driver.mobileNumber || 'N/A'}</b></div>
@@ -127,6 +128,11 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
             <span style="color: #64748b;">Assigned Vehicle:</span>
             <b style="color: #d97706;">${driver.assignedBikeRegistration || 'BIKE'}</b>
           </div>
+          ${driver.shiftDistanceKm ? `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; border: 1px solid #bbf7d0;">
+            <span style="color: #166534; font-weight: 600;">Shift Traveled:</span>
+            <b style="color: #15803d; font-size: 13px;">${driver.shiftDistanceKm} km</b>
+          </div>` : ''}
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding: 2px 6px;">
             <span style="color: #64748b;">Live Speed:</span>
             <b style="color: ${isOverspeed ? '#dc2626' : isMoving ? '#16a34a' : '#d97706'}; font-size: 13px;">
@@ -139,6 +145,28 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
               ${driver.isCurrentlyOnDuty ? '🟢 ON DUTY' : '⚪ OFF DUTY'}
             </b>
           </div>
+          ${driver.lastPlatformRideEvent ? `
+          <div style="margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: ${
+            driver.lastPlatformRideEvent.eventType === 'RIDE_ACCEPTED' ? '#ecfdf5; border: 1px solid #10b981;' :
+            driver.lastPlatformRideEvent.eventType === 'RIDE_CANCELLED' ? '#fef2f2; border: 1px solid #ef4444;' :
+            '#eff6ff; border: 1px solid #3b82f6;'
+          }">
+            <div style="font-size: 11px; font-weight: 800; color: ${
+              driver.lastPlatformRideEvent.eventType === 'RIDE_ACCEPTED' ? '#047857;' :
+              driver.lastPlatformRideEvent.eventType === 'RIDE_CANCELLED' ? '#b91c1c;' :
+              '#1d4ed8;'
+            }">
+              🚖 ${driver.lastPlatformRideEvent.platform || 'GIG'} • ${
+                driver.lastPlatformRideEvent.eventType === 'RIDE_ACCEPTED' ? '🟢 ON TRIP (ACCEPTED)' :
+                driver.lastPlatformRideEvent.eventType === 'RIDE_CANCELLED' ? '🔴 CANCELLED' :
+                driver.lastPlatformRideEvent.eventType === 'RIDE_COMPLETED' ? '🏁 COMPLETED' :
+                driver.lastPlatformRideEvent.eventType
+              }
+            </div>
+            <div style="font-size: 10px; color: #475569; margin-top: 2px;">
+              ${driver.lastPlatformRideEvent.timestamp ? formatDateTime(driver.lastPlatformRideEvent.timestamp) : ''}
+            </div>
+          </div>` : ''}
           <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #e2e8f0; font-size: 11px;">
             ${isOutdated ? 
               '<span style="color: #dc2626; font-weight: 700;">⚠️ Old GPS Ping</span>' : 

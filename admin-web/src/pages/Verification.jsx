@@ -5,7 +5,11 @@ import {
   XCircle, 
   RotateCw, 
   Eye, 
-  ExternalLink 
+  ExternalLink,
+  Clock,
+  Search,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -21,6 +25,8 @@ export default function Verification() {
   const [previewModal, setPreviewModal] = useState({ isOpen: false, doc: null, imgError: false });
   const [loading, setLoading] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
+  const [activeTab, setActiveTab] = useState('PENDING'); // 'PENDING' | 'VERIFIED' | 'REJECTED' | 'ALL'
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const handleErr = (err) => {
@@ -40,6 +46,32 @@ export default function Verification() {
   }, []);
 
   const driversMap = Object.fromEntries(drivers.map(d => [d.id, d]));
+
+  const pendingDocs = documents.filter(d => !d.status || d.status === 'PENDING' || d.status === 'SUBMITTED');
+  const verifiedDocs = documents.filter(d => d.status === 'VERIFIED');
+  const rejectedDocs = documents.filter(d => d.status === 'REJECTED' || d.status === 'RESUBMIT_REQUIRED');
+
+  // Filter by active tab
+  let tabFilteredDocs = documents;
+  if (activeTab === 'PENDING') {
+    tabFilteredDocs = pendingDocs;
+  } else if (activeTab === 'VERIFIED') {
+    tabFilteredDocs = verifiedDocs;
+  } else if (activeTab === 'REJECTED') {
+    tabFilteredDocs = rejectedDocs;
+  }
+
+  // Filter by search query
+  const displayedDocs = tabFilteredDocs.filter(d => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const driver = driversMap[d.driverId];
+    const driverName = (driver?.fullName || d.driverName || '').toLowerCase();
+    const phone = (driver?.mobileNumber || '').toLowerCase();
+    const type = (d.type || '').toLowerCase();
+    const docNum = (d.documentNumber || '').toLowerCase();
+    return driverName.includes(q) || phone.includes(q) || type.includes(q) || docNum.includes(q);
+  });
 
   const handleDecision = async () => {
     if (!selectedDoc || !decisionModal.status) return;
@@ -89,11 +121,237 @@ export default function Verification() {
 
   return (
     <div>
+      {/* Top Metric Stat Cards */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+        gap: '1rem',
+        marginBottom: '1.25rem'
+      }}>
+        <div 
+          className="stat-card" 
+          style={{ 
+            borderLeft: '4px solid #F59E0B', 
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'PENDING' ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-surface)' 
+          }} 
+          onClick={() => setActiveTab('PENDING')}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>PENDING QUEUE</span>
+            <Clock size={18} color="#F59E0B" />
+          </div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#FCD34D', marginTop: '0.4rem' }}>
+            {pendingDocs.length}
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Awaiting operational review</span>
+        </div>
+
+        <div 
+          className="stat-card" 
+          style={{ 
+            borderLeft: '4px solid #10B981', 
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'VERIFIED' ? 'rgba(16, 185, 129, 0.08)' : 'var(--bg-surface)' 
+          }} 
+          onClick={() => setActiveTab('VERIFIED')}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>APPROVED DOCUMENTS</span>
+            <CheckCircle size={18} color="#10B981" />
+          </div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#34D399', marginTop: '0.4rem' }}>
+            {verifiedDocs.length}
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Verified & compliant</span>
+        </div>
+
+        <div 
+          className="stat-card" 
+          style={{ 
+            borderLeft: '4px solid #EF4444', 
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'REJECTED' ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-surface)' 
+          }} 
+          onClick={() => setActiveTab('REJECTED')}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>REJECTED / RESUBMIT</span>
+            <XCircle size={18} color="#EF4444" />
+          </div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#F87171', marginTop: '0.4rem' }}>
+            {rejectedDocs.length}
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>Correction requested</span>
+        </div>
+
+        <div 
+          className="stat-card" 
+          style={{ 
+            borderLeft: '4px solid #3B82F6', 
+            cursor: 'pointer',
+            backgroundColor: activeTab === 'ALL' ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-surface)' 
+          }} 
+          onClick={() => setActiveTab('ALL')}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#94A3B8', fontSize: '0.8rem', fontWeight: 600 }}>TOTAL DOCUMENTS</span>
+            <FileCheck2 size={18} color="#3B82F6" />
+          </div>
+          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#93C5FD', marginTop: '0.4rem' }}>
+            {documents.length}
+          </div>
+          <span style={{ fontSize: '0.75rem', color: '#94A3B8' }}>All records in registry</span>
+        </div>
+      </div>
+
       <div className="panel">
-        <div className="panel-header">
+        <div className="panel-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
           <div className="panel-title">
             <FileCheck2 size={18} color="#F59E0B" />
-            <span>Document Verification Queue</span>
+            <span>Document Verification Management</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+              Showing: <b style={{ color: '#FFF' }}>{displayedDocs.length}</b> of {documents.length} docs
+            </span>
+          </div>
+        </div>
+
+        {/* Tab Switcher & Search Bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.85rem 1.25rem',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          gap: '1rem',
+          flexWrap: 'wrap',
+          backgroundColor: 'rgba(0, 0, 0, 0.15)'
+        }}>
+          <div style={{ display: 'flex', gap: '0.4rem', background: 'rgba(0,0,0,0.3)', padding: '4px', borderRadius: '10px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: activeTab === 'PENDING' ? '700' : '500',
+                backgroundColor: activeTab === 'PENDING' ? '#F59E0B' : 'transparent',
+                color: activeTab === 'PENDING' ? '#000' : '#CBD5E1',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                cursor: 'pointer'
+              }}
+              onClick={() => setActiveTab('PENDING')}
+            >
+              <Clock size={15} />
+              <span>Pending Queue</span>
+              <span style={{
+                background: activeTab === 'PENDING' ? '#000' : 'rgba(245, 158, 11, 0.2)',
+                color: activeTab === 'PENDING' ? '#F59E0B' : '#FCD34D',
+                padding: '1px 7px',
+                borderRadius: '12px',
+                fontSize: '0.72rem',
+                fontWeight: '800'
+              }}>
+                {pendingDocs.length}
+              </span>
+            </button>
+
+            <button
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: activeTab === 'VERIFIED' ? '700' : '500',
+                backgroundColor: activeTab === 'VERIFIED' ? '#10B981' : 'transparent',
+                color: activeTab === 'VERIFIED' ? '#000' : '#CBD5E1',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                cursor: 'pointer'
+              }}
+              onClick={() => setActiveTab('VERIFIED')}
+            >
+              <CheckCircle size={15} />
+              <span>Verified Documents</span>
+              <span style={{
+                background: activeTab === 'VERIFIED' ? '#000' : 'rgba(16, 185, 129, 0.2)',
+                color: activeTab === 'VERIFIED' ? '#10B981' : '#34D399',
+                padding: '1px 7px',
+                borderRadius: '12px',
+                fontSize: '0.72rem',
+                fontWeight: '800'
+              }}>
+                {verifiedDocs.length}
+              </span>
+            </button>
+
+            <button
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: activeTab === 'REJECTED' ? '700' : '500',
+                backgroundColor: activeTab === 'REJECTED' ? '#EF4444' : 'transparent',
+                color: activeTab === 'REJECTED' ? '#FFF' : '#CBD5E1',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                cursor: 'pointer'
+              }}
+              onClick={() => setActiveTab('REJECTED')}
+            >
+              <XCircle size={15} />
+              <span>Rejected / Resubmit</span>
+              <span style={{
+                background: activeTab === 'REJECTED' ? 'rgba(0,0,0,0.4)' : 'rgba(239, 68, 68, 0.2)',
+                color: activeTab === 'REJECTED' ? '#FFF' : '#F87171',
+                padding: '1px 7px',
+                borderRadius: '12px',
+                fontSize: '0.72rem',
+                fontWeight: '800'
+              }}>
+                {rejectedDocs.length}
+              </span>
+            </button>
+
+            <button
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: activeTab === 'ALL' ? '700' : '500',
+                backgroundColor: activeTab === 'ALL' ? '#3B82F6' : 'transparent',
+                color: activeTab === 'ALL' ? '#FFF' : '#CBD5E1',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                cursor: 'pointer'
+              }}
+              onClick={() => setActiveTab('ALL')}
+            >
+              <FileCheck2 size={15} />
+              <span>All ({documents.length})</span>
+            </button>
+          </div>
+
+          <div style={{ position: 'relative', minWidth: '240px' }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748B' }} />
+            <input
+              type="text"
+              placeholder="Search driver, doc #..."
+              className="form-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ paddingLeft: '28px', height: '36px', fontSize: '0.82rem' }}
+            />
           </div>
         </div>
 
@@ -110,16 +368,8 @@ export default function Verification() {
           }}>
             <strong style={{ color: '#EF4444' }}>⚠️ Firestore Security Rules: Admin Access Restricted</strong>
             <p style={{ marginTop: '0.4rem', color: '#FEE2E2', fontSize: '0.85rem' }}>
-              Firestore rules require this admin user to be registered in the <code>adminUsers</code> collection, or the rules need to be published in Firebase Console.
+              Firestore rules require this admin user to be registered in the <code>adminUsers</code> collection.
             </p>
-            <div style={{ marginTop: '0.6rem', fontSize: '0.8rem', background: 'rgba(0,0,0,0.3)', padding: '0.6rem', borderRadius: 6 }}>
-              <strong>Quick 1-Minute Fix in Firebase Console:</strong><br />
-              1. Open Firebase Console → Firestore Database → <strong>Data</strong><br />
-              2. Go to collection <strong><code>adminUsers</code></strong> (or create it)<br />
-              3. Add document with ID: <code style={{ color: '#F59E0B' }}>w0rfUy04XkRJXDRoBwkW5K0VTNy2</code><br />
-              4. Set fields: <code>email: "owner@mmride.com"</code>, <code>role: "SUPER_ADMIN"</code>, <code>active: true</code><br />
-              5. Once saved, refresh this page and all uploaded documents will load!
-            </div>
           </div>
         )}
 
@@ -130,13 +380,14 @@ export default function Verification() {
                 <th>Driver</th>
                 <th>Document Type</th>
                 <th>Document Number</th>
-                <th>Uploaded At</th>
+                <th>{activeTab === 'VERIFIED' ? 'Verified At' : 'Uploaded At'}</th>
+                {activeTab === 'REJECTED' && <th>Rejection Reason</th>}
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {documents.map(d => {
+              {displayedDocs.map(d => {
                 const driver = driversMap[d.driverId];
                 return (
                   <tr key={d.id}>
@@ -166,20 +417,33 @@ export default function Verification() {
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#64748B' }}>ID: {d.driverId}</div>
                     </td>
-                    <td><b>{d.type || 'ID Document'}</b></td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: '#E2E8F0' }}>
+                        {d.type?.replace(/_/g, ' ') || 'ID Document'}
+                      </span>
+                    </td>
                     <td><code>{d.documentNumber || '—'}</code></td>
-                    <td>{formatDateTime(d.uploadedAt || d.createdAt)}</td>
+                    <td style={{ fontSize: '0.8rem', color: '#94A3B8' }}>
+                      {formatDateTime(activeTab === 'VERIFIED' && d.verifiedAt ? d.verifiedAt : (d.uploadedAt || d.createdAt))}
+                    </td>
+                    {activeTab === 'REJECTED' && (
+                      <td style={{ maxWidth: '220px', color: '#FCA5A5', fontSize: '0.8rem' }}>
+                        {d.rejectionReason || 'No reason specified'}
+                      </td>
+                    )}
                     <td>
                       <span className={`badge ${
                         d.status === 'VERIFIED' ? 'badge-success' :
                         d.status === 'REJECTED' ? 'badge-danger' :
                         d.status === 'RESUBMIT_REQUIRED' ? 'badge-warning' : 'badge-neutral'
                       }`}>
-                        {d.status || 'PENDING'}
+                        {d.status === 'VERIFIED' ? '🟢 VERIFIED' : 
+                         d.status === 'REJECTED' ? '🔴 REJECTED' : 
+                         d.status === 'RESUBMIT_REQUIRED' ? '🟠 RESUBMIT' : '🟡 PENDING'}
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                         {d.fileUrl && (
                           <button
                             className="btn btn-secondary btn-sm"
@@ -190,46 +454,65 @@ export default function Verification() {
                           </button>
                         )}
 
-                        <button
-                          className="btn btn-success btn-sm"
-                          onClick={() => {
-                            setSelectedDoc(d);
-                            setDecisionModal({ isOpen: true, status: 'VERIFIED', reason: '' });
-                          }}
-                        >
-                          <CheckCircle size={14} /> Verify
-                        </button>
+                        {d.status !== 'VERIFIED' && (
+                          <button
+                            className="btn btn-success btn-sm"
+                            onClick={() => {
+                              setSelectedDoc(d);
+                              setDecisionModal({ isOpen: true, status: 'VERIFIED', reason: '' });
+                            }}
+                          >
+                            <CheckCircle size={14} /> Verify
+                          </button>
+                        )}
 
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => {
-                            setSelectedDoc(d);
-                            setDecisionModal({ isOpen: true, status: 'REJECTED', reason: '' });
-                          }}
-                        >
-                          <XCircle size={14} /> Reject
-                        </button>
+                        {d.status !== 'REJECTED' && (
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => {
+                              setSelectedDoc(d);
+                              setDecisionModal({ isOpen: true, status: 'REJECTED', reason: '' });
+                            }}
+                          >
+                            <XCircle size={14} /> Reject
+                          </button>
+                        )}
 
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          style={{ borderColor: 'rgba(245, 158, 11, 0.4)', color: '#FCD34D' }}
-                          onClick={() => {
-                            setSelectedDoc(d);
-                            setDecisionModal({ isOpen: true, status: 'RESUBMIT_REQUIRED', reason: '' });
-                          }}
-                        >
-                          <RotateCw size={14} /> Resubmit
-                        </button>
+                        {d.status !== 'RESUBMIT_REQUIRED' && (
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ borderColor: 'rgba(245, 158, 11, 0.4)', color: '#FCD34D' }}
+                            onClick={() => {
+                              setSelectedDoc(d);
+                              setDecisionModal({ isOpen: true, status: 'RESUBMIT_REQUIRED', reason: '' });
+                            }}
+                          >
+                            <RotateCw size={14} /> Resubmit
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                 );
               })}
 
-              {documents.length === 0 && (
+              {displayedDocs.length === 0 && (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: '#64748B' }}>
-                    No pending documents in the queue.
+                  <td colSpan={activeTab === 'REJECTED' ? 7 : 6} style={{ textAlign: 'center', padding: '2.5rem', color: '#64748B' }}>
+                    <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>
+                      {activeTab === 'PENDING' ? '🎉' : activeTab === 'VERIFIED' ? '📑' : '🔍'}
+                    </div>
+                    <div style={{ fontWeight: 600, color: '#94A3B8', fontSize: '0.95rem' }}>
+                      {activeTab === 'PENDING' && 'All Caught Up! No pending documents awaiting review.'}
+                      {activeTab === 'VERIFIED' && 'No verified documents found.'}
+                      {activeTab === 'REJECTED' && 'No rejected or resubmit documents.'}
+                      {activeTab === 'ALL' && 'No documents found matching criteria.'}
+                    </div>
+                    {searchQuery && (
+                      <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '0.25rem' }}>
+                        No results for "{searchQuery}". Try clearing the search.
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}

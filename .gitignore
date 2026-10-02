@@ -52,4 +52,5 @@ Desktop.ini
 
 # Binaries & Tooling
 *.exe
+users.json
 

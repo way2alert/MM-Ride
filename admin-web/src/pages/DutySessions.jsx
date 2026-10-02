@@ -184,6 +184,7 @@ export default function DutySessions() {
                 <th>Shift Started</th>
                 <th>Shift Ended</th>
                 <th>Total Hours</th>
+                <th>Rides & Earnings</th>
                 <th>Odometer Range</th>
                 <th>Distance Covered</th>
                 <th>12h Compliance</th>
@@ -231,6 +232,16 @@ export default function DutySessions() {
                         <div style={{ fontSize: '0.72rem', color: '#F59E0B' }}>
                           Break: {s.totalBreakMinutes}m (Net: {s.netWorkingHours || '—'}h)
                         </div>
+                      )}
+                    </td>
+                    <td>
+                      {s.totalRidesLogged ? (
+                        <div>
+                          <b style={{ color: '#10B981', fontSize: '0.9rem' }}>{s.totalRidesLogged} rides</b>
+                          <div style={{ fontSize: '0.72rem', color: '#CBD5E1' }}>₹{s.grossEarningsLogged || 0} gross</div>
+                        </div>
+                      ) : (
+                        <span style={{ color: '#64748B', fontSize: '0.8rem' }}>0 logged</span>
                       )}
                     </td>
                     <td>

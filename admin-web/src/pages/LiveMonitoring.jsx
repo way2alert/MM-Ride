@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   MapPin, 
   Search, 
@@ -33,6 +33,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
   const [actionFeedback, setActionFeedback] = useState(null); // { type, title, message, actionButton }
   const [filterMode, setFilterMode] = useState('ALL'); // ALL, DUTY, MOVING, IDLE, OVERSPEED
   const [speedThreshold, setSpeedThreshold] = useState(60);
+  const driverGpsHistoryRef = useRef(new Map());
 
   useEffect(() => {
     const unsubDrivers = subscribeToCollection('drivers', setDrivers);
@@ -73,19 +74,90 @@ export default function LiveMonitoring({ onSelectDriver }) {
     if (dev?.lastGps?.latitude && dev?.lastGps?.longitude) {
       const devTime = dev.lastGps.timestamp ? new Date(dev.lastGps.timestamp).getTime() : 0;
       const drvTime = driver.lastKnownLocation?.timestamp ? new Date(driver.lastKnownLocation.timestamp).getTime() : 0;
+      const maxSpeed = Math.max(Number(dev.lastGps.speed) || 0, Number(driver.lastKnownLocation?.speed) || 0);
+      
       if (!effectiveLocation || devTime >= drvTime) {
         effectiveLocation = {
           latitude: dev.lastGps.latitude,
           longitude: dev.lastGps.longitude,
-          speed: dev.lastGps.speed !== undefined ? dev.lastGps.speed : (effectiveLocation?.speed || 0),
+          speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (dev.lastGps.speed !== undefined ? dev.lastGps.speed : (effectiveLocation?.speed || 0)),
           timestamp: dev.lastGps.timestamp || dev.lastSync || new Date().toISOString()
         };
+      } else if (effectiveLocation) {
+        effectiveLocation = {
+          ...effectiveLocation,
+          speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (effectiveLocation.speed || 0)
+        };
       }
+    }
+
+    // Dynamic Server-Side Delta Speed Calculator (Ensures moving bikes show real speed even if phone reports 0)
+    let dynamicSpeed = Number(effectiveLocation?.speed) || 0;
+    if (effectiveLocation?.latitude && effectiveLocation?.longitude) {
+      const prev = driverGpsHistoryRef.current.get(driver.id);
+      const curTime = effectiveLocation.timestamp ? new Date(effectiveLocation.timestamp).getTime() : Date.now();
+
+      if (prev && prev.latitude && prev.longitude) {
+        const dtSeconds = (curTime - prev.timestamp) / 1000;
+        if (dtSeconds >= 2 && dtSeconds <= 180) {
+          const R = 6371e3;
+          const phi1 = (prev.latitude * Math.PI) / 180;
+          const phi2 = (effectiveLocation.latitude * Math.PI) / 180;
+          const deltaPhi = ((effectiveLocation.latitude - prev.latitude) * Math.PI) / 180;
+          const deltaLambda = ((effectiveLocation.longitude - prev.longitude) * Math.PI) / 180;
+          const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                    Math.cos(phi1) * Math.cos(phi2) *
+                    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distMeters = R * c;
+
+          if (distMeters >= 3) {
+            const calcSpeed = Math.round((distMeters / dtSeconds) * 3.6);
+            if (calcSpeed > 0 && calcSpeed <= 120) {
+              dynamicSpeed = Math.max(dynamicSpeed, calcSpeed);
+            }
+          }
+        }
+      }
+
+      if (!prev || prev.latitude !== effectiveLocation.latitude || prev.longitude !== effectiveLocation.longitude) {
+        driverGpsHistoryRef.current.set(driver.id, {
+          latitude: effectiveLocation.latitude,
+          longitude: effectiveLocation.longitude,
+          timestamp: curTime,
+          recentSpeed: dynamicSpeed
+        });
+      } else if (prev && (curTime - prev.timestamp) > 40000) {
+        dynamicSpeed = 0; // Stationary for >40s
+      } else if (prev && prev.recentSpeed > 0 && (curTime - prev.timestamp) < 15000) {
+        dynamicSpeed = Math.max(dynamicSpeed, prev.recentSpeed);
+      }
+
+      effectiveLocation = {
+        ...effectiveLocation,
+        speed: dynamicSpeed
+      };
+    }
+
+    // Calculate shift distance from pickup GPS
+    let shiftDistKm = 0;
+    const activeDuty = dutySessions.find(ds => (ds.id === driver.currentDutyId || ds.driverId === driver.id) && ds.status === 'ACTIVE');
+    if (activeDuty?.pickupGps?.latitude && effectiveLocation?.latitude) {
+      const R = 6371;
+      const phi1 = (activeDuty.pickupGps.latitude * Math.PI) / 180;
+      const phi2 = (effectiveLocation.latitude * Math.PI) / 180;
+      const dPhi = ((effectiveLocation.latitude - activeDuty.pickupGps.latitude) * Math.PI) / 180;
+      const dLam = ((effectiveLocation.longitude - activeDuty.pickupGps.longitude) * Math.PI) / 180;
+      const a = Math.sin(dPhi / 2) * Math.sin(dPhi / 2) +
+                Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) * Math.sin(dLam / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      shiftDistKm = Math.round((R * c) * 10) / 10;
     }
 
     return {
       ...driver,
       lastKnownLocation: effectiveLocation,
+      shiftDistanceKm: shiftDistKm,
       deviceTelemetry: dev ? {
         batteryLevel: dev.batteryLevel,
         isCharging: dev.isCharging,

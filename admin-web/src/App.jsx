@@ -18,6 +18,7 @@ import Incidents from './pages/Incidents';
 import Reports from './pages/Reports';
 import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
+import RidesRadar from './pages/RidesRadar';
 
 export default function App() {
   const { currentUser, loading } = useAuth();
@@ -47,6 +48,7 @@ export default function App() {
   const tabTitles = {
     'dashboard': { title: 'Operational Command Dashboard', subtitle: 'Overview of fleet activity, drivers, and high-priority alerts' },
     'live-map': { title: 'Live Fleet & Duty Telemetry', subtitle: 'Real-time GPS tracking and geofence monitoring' },
+    'rides-radar': { title: 'Rides & Gig Telemetry Radar', subtitle: 'Real-time Ola / Uber / Rapido passenger requests, driver accepts, cancellations, and fare logs' },
     'drivers': { title: 'Driver Management', subtitle: 'Complete lifecycle management across all 12 operational states' },
     'driver-detail': { title: 'Driver 360° Profile', subtitle: 'Documents, shifts, telemetry, settlements, and audit history' },
     'verification': { title: 'Document Verification Queue', subtitle: 'Review and approve submitted KYC documents' },
@@ -75,6 +77,14 @@ export default function App() {
       {currentTab === 'dashboard' && <Dashboard setTab={setCurrentTab} />}
       {currentTab === 'live-map' && (
         <LiveMonitoring
+          onSelectDriver={(driver) => {
+            setSelectedDriver(driver);
+            setCurrentTab('driver-detail');
+          }}
+        />
+      )}
+      {currentTab === 'rides-radar' && (
+        <RidesRadar
           onSelectDriver={(driver) => {
             setSelectedDriver(driver);
             setCurrentTab('driver-detail');

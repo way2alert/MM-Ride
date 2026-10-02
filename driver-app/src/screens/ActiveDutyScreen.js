@@ -19,11 +19,13 @@ import { useDriver } from '../context/DriverContext';
 import { colors } from '../utils/colors';
 import { logGpsBreadcrumb, uploadVerificationSelfie, confirmIdentityChallenge, submitFuelFillEntry } from '../firebase/api';
 import { processGigNotification } from '../services/gigRideWatcher';
+import { useKeepAwake } from 'expo-keep-awake';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
 import QuickRideLoggerModal from '../components/QuickRideLoggerModal';
 
 export default function ActiveDutyScreen({ navigation }) {
+  useKeepAwake();
   const { 
     currentUser,
     driverProfile, 
@@ -116,25 +118,19 @@ export default function ActiveDutyScreen({ navigation }) {
   const totalUpiLogged = shiftRides.filter(r => r.paymentMethod !== 'CASH').reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
   const driverEstShare = Math.round(totalGrossLogged * 0.5);
 
-  // Continuous Live GPS Heartbeat & Test Ride Movement Telemetry
+  // Test Ride Movement Telemetry (Simulation mode ONLY - never overwrites real GPS)
   useEffect(() => {
-    if (!driverProfile?.id || !activeDutySession?.id) return;
+    if (!driverProfile?.id || !activeDutySession?.id || !isSimulatingMovement) return;
 
     const baseLat = currentLocation?.latitude || 28.6115;
     const baseLng = currentLocation?.longitude || 77.0817;
 
     const timer = setInterval(async () => {
-      let lat = baseLat;
-      let lng = baseLng;
-      let speed = currentSpeed || 0;
-
-      if (isSimulatingMovement) {
-        setSimStep(prev => prev + 1);
-        const offset = (simStep % 50) * 0.0005;
-        lat = baseLat + offset;
-        lng = baseLng + (offset * 0.7);
-        speed = 28 + Math.floor(Math.abs(Math.sin(simStep)) * 8);
-      }
+      setSimStep(prev => prev + 1);
+      const offset = ((simStep + 1) % 50) * 0.0005;
+      const lat = baseLat + offset;
+      const lng = baseLng + (offset * 0.7);
+      const speed = 28 + Math.floor(Math.abs(Math.sin(simStep)) * 8);
 
       try {
         await logGpsBreadcrumb({
@@ -143,16 +139,16 @@ export default function ActiveDutyScreen({ navigation }) {
           latitude: lat,
           longitude: lng,
           speed,
-          isMock: isSimulatingMovement,
+          isMock: true,
           deviceId: driverProfile?.boundDeviceId || 'android_telemetry_live'
         });
       } catch (err) {
         // silent
       }
-    }, 6000);
+    }, 4000);
 
     return () => clearInterval(timer);
-  }, [driverProfile?.id, activeDutySession?.id, isSimulatingMovement, simStep, currentLocation, currentSpeed]);
+  }, [driverProfile?.id, activeDutySession?.id, isSimulatingMovement, simStep, currentLocation?.latitude, currentLocation?.longitude]);
 
   // Calculate duty elapsed time from server startTime
   useEffect(() => {

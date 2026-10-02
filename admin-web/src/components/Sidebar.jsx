@@ -16,7 +16,8 @@ import {
   ScrollText, 
   Settings, 
   LogOut,
-  X 
+  X,
+  Radio
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -79,6 +80,7 @@ export default function Sidebar({ currentTab, setTab, mobileOpen, onClose }) {
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'live-map', label: 'Live Monitoring', icon: MapPin },
+        { id: 'rides-radar', label: 'Rides & Trip Radar', icon: Radio },
         { id: 'duty-sessions', label: 'Duty Shifts & Log', icon: Clock },
       ]
     },

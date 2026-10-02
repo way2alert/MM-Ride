@@ -4,7 +4,7 @@ import { doc, onSnapshot, getDoc, collection, query, where, getDocs, updateDoc }
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import { auth, db } from '../firebase/config';
 import { logGpsBreadcrumb, bindDriverDevice } from '../firebase/api';
 import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, getDeviceHardwareMetrics, updateMdmTelemetryLocation } from '../services/deviceMdmService';
@@ -31,6 +31,8 @@ export function DriverProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(true);
   const lastDriverSyncRef = useRef(0);
+  const lastCoordsRef = useRef(null);
+  const lastBreadcrumbRef = useRef(0);
 
   // MDM Dedicated Device & Kiosk State
   const [restrictionState, setRestrictionState] = useState(null);
@@ -183,13 +185,22 @@ export function DriverProvider({ children }) {
           } catch (e) {
             // ignore background permission warning in emulator/web
           }
+
+          // Request battery optimization exemption for uninterrupted telemetry
+          if (Platform.OS === 'android') {
+            try {
+              Linking.sendIntent('android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', [
+                { key: 'data', value: 'package:com.mmride.driver' }
+              ]).catch(() => {});
+            } catch (e) {}
+          }
         }
 
         locationSubscription = await Location.watchPositionAsync(
           {
-            accuracy: Location.Accuracy.High,
-            timeInterval: 5000,
-            distanceInterval: 10
+            accuracy: Location.Accuracy.BestForNavigation || Location.Accuracy.High,
+            timeInterval: 2000,
+            distanceInterval: 1
           },
           (loc) => {
             const coords = {
@@ -197,15 +208,48 @@ export function DriverProvider({ children }) {
               longitude: loc.coords.longitude,
               accuracy: loc.coords.accuracy
             };
-            const speedKmh = Math.max(0, Math.round((loc.coords.speed || 0) * 3.6));
+
+            // Calculate real-world speed (falls back to Haversine delta distance if Android OS speed is 0/null)
+            let speedKmh = 0;
+            const nativeSpeed = (loc.coords.speed !== null && loc.coords.speed !== undefined && loc.coords.speed >= 0)
+              ? Math.round(loc.coords.speed * 3.6)
+              : null;
+
+            const now = Date.now();
+            if (lastCoordsRef.current && lastCoordsRef.current.timestamp) {
+              const dtSeconds = (now - lastCoordsRef.current.timestamp) / 1000;
+              if (dtSeconds > 0 && dtSeconds < 30) {
+                const R = 6371e3;
+                const phi1 = (lastCoordsRef.current.latitude * Math.PI) / 180;
+                const phi2 = (coords.latitude * Math.PI) / 180;
+                const deltaPhi = ((coords.latitude - lastCoordsRef.current.latitude) * Math.PI) / 180;
+                const deltaLambda = ((coords.longitude - lastCoordsRef.current.longitude) * Math.PI) / 180;
+                const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+                          Math.cos(phi1) * Math.cos(phi2) *
+                          Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                const distMeters = R * c;
+
+                if (distMeters >= 2) {
+                  const calculatedSpeed = Math.round((distMeters / dtSeconds) * 3.6);
+                  speedKmh = nativeSpeed !== null && nativeSpeed > 0 ? Math.max(nativeSpeed, calculatedSpeed) : calculatedSpeed;
+                } else {
+                  speedKmh = nativeSpeed !== null ? nativeSpeed : 0;
+                }
+              }
+            } else {
+              speedKmh = nativeSpeed !== null ? nativeSpeed : 0;
+            }
+
+            lastCoordsRef.current = { latitude: coords.latitude, longitude: coords.longitude, timestamp: now };
+
             setCurrentLocation(coords);
             setCurrentSpeed(speedKmh);
             updateMdmTelemetryLocation(coords, speedKmh);
 
-            // Real-time live GPS telemetry sync to driver document (throttled to every 4s)
+            // Real-time live GPS telemetry sync to driver document (throttled to every 3s)
             if (driverProfile?.id && coords?.latitude && coords?.longitude) {
-              const now = Date.now();
-              if (now - lastDriverSyncRef.current >= 4000) {
+              if (now - lastDriverSyncRef.current >= 3000) {
                 lastDriverSyncRef.current = now;
                 updateDoc(doc(db, 'drivers', driverProfile.id), {
                   lastKnownLocation: {
@@ -220,17 +264,20 @@ export function DriverProvider({ children }) {
               }
             }
 
-            // Log breadcrumb to Firestore every 30 seconds if on active duty
+            // Log breadcrumb to Firestore every 20 seconds on active duty (or immediately if moving)
             if (driverProfile?.id && activeDutySession?.id && activeDutySession.status === 'ACTIVE') {
-              logGpsBreadcrumb({
-                driverId: driverProfile.id,
-                dutyId: activeDutySession.id,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                speed: speedKmh,
-                isMock: loc.mocked || false,
-                deviceId: driverProfile?.boundDeviceId || Device.osBuildId || 'android_device'
-              }).catch(err => console.warn('Breadcrumb log error:', err.message));
+              if (now - lastBreadcrumbRef.current >= 20000 || (speedKmh > 5 && (now - lastBreadcrumbRef.current >= 8000))) {
+                lastBreadcrumbRef.current = now;
+                logGpsBreadcrumb({
+                  driverId: driverProfile.id,
+                  dutyId: activeDutySession.id,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  speed: speedKmh,
+                  isMock: loc.mocked || false,
+                  deviceId: driverProfile?.boundDeviceId || Device.osBuildId || 'android_device'
+                }).catch(err => console.warn('Breadcrumb log error:', err.message));
+              }
             }
           }
         );
