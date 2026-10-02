@@ -110,6 +110,8 @@ export function DriverProvider({ children }) {
           return;
         }
 
+        setDriverProfile(data);
+
         // Fetch assigned bike details if assigned
         if (data.assignedBikeId) {
           try {

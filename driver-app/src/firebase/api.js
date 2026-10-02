@@ -136,7 +136,7 @@ export async function submitDriverAddress(driverId, addressData) {
     ...addressData,
     isVerified: false,
     verificationStatus: 'PENDING',
-    createdAt: serverTimestamp()
+    updatedAt: serverTimestamp()
   }, { merge: true });
 }
 

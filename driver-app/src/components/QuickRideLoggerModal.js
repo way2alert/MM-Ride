@@ -11,12 +11,13 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
-  ScrollView
+  ScrollView,
+  Vibration
 } from 'react-native';
 import { colors } from '../utils/colors';
 import { logShiftRideEntry } from '../firebase/api';
 
-const PRESET_FARES = [40, 60, 80, 100, 150, 200, 250, 300];
+const PRESET_FARES = [30, 40, 50, 60, 80, 100, 120, 150, 200, 250];
 
 export default function QuickRideLoggerModal({
   visible,
@@ -24,9 +25,10 @@ export default function QuickRideLoggerModal({
   driverId,
   dutyId,
   currentLocation,
-  onRideLogged
+  onRideLogged,
+  initialPlatform = 'OLA'
 }) {
-  const [platform, setPlatform] = useState('OLA'); // 'OLA' | 'UBER' | 'RAPIDO'
+  const [platform, setPlatform] = useState(initialPlatform); // 'OLA' | 'UBER' | 'RAPIDO'
   const [paymentMethod, setPaymentMethod] = useState('CASH'); // 'CASH' | 'UPI' | 'SPLIT'
   const [fare, setFare] = useState('');
   const [splitCash, setSplitCash] = useState('');
@@ -39,26 +41,30 @@ export default function QuickRideLoggerModal({
   const parsedSplitTotal = parsedSplitCash + parsedSplitUpi;
 
   const effectiveFare = paymentMethod === 'SPLIT' ? parsedSplitTotal : parsedFare;
+  const estDriverShare = Math.round(effectiveFare * 0.5);
 
   const handlePresetSelect = (amt) => {
     setFare(String(amt));
+    try {
+      Vibration.vibrate(30);
+    } catch (_) {}
   };
 
   const handleSave = async () => {
     if (paymentMethod === 'SPLIT') {
       if (parsedSplitTotal <= 0) {
-        Alert.alert('Amount Required', 'Kripya Cash aur UPI amount enter karein.');
+        Alert.alert('Amount Required', 'Please enter Cash and UPI amounts (பணம் உள்ளிடவும்).');
         return;
       }
     } else {
       if (parsedFare <= 0) {
-        Alert.alert('Fare Required', 'Kripya ride ka fare (₹) enter karein ya preset button dabayein.');
+        Alert.alert('Fare Required', 'Please select a fare button or type the amount (கட்டணம் உள்ளிடவும்).');
         return;
       }
     }
 
     if (!driverId) {
-      Alert.alert('Error', 'Driver session missing. Please restart shift.');
+      Alert.alert('Session Missing', 'Driver session missing. Please restart your shift.');
       return;
     }
 
@@ -79,6 +85,10 @@ export default function QuickRideLoggerModal({
         location: currentLocation || null
       });
 
+      try {
+        Vibration.vibrate([0, 50, 50, 50]);
+      } catch (_) {}
+
       const loggedItem = {
         platform,
         paymentMethod,
@@ -97,12 +107,12 @@ export default function QuickRideLoggerModal({
       setSplitUpi('');
 
       const paymentSummary = paymentMethod === 'SPLIT'
-        ? `⚡ Split (💵 ₹${finalCash} + 📲 ₹${finalUpi})`
+        ? `Split (💵 ₹${finalCash} + 📲 ₹${finalUpi})`
         : (paymentMethod === 'CASH' ? '💵 Cash' : '📲 UPI');
 
       Alert.alert(
         'Ride Saved! ✅',
-        `${platform} • ${paymentSummary} • ₹${finalFare}\n\nToday's hisaab me add ho gaya hai!`,
+        `${platform} • ${paymentSummary} • ₹${finalFare}\nYour 50% Share: ₹${estDriverShare}\n\nAdded to today's shift earnings!`,
         [
           {
             text: 'Stay in App',
@@ -110,7 +120,7 @@ export default function QuickRideLoggerModal({
             onPress: onClose
           },
           {
-            text: `Open ${platform === 'UBER' ? 'Uber' : 'Ola'} App 🚀`,
+            text: `Open ${platform === 'UBER' ? 'Uber' : platform === 'RAPIDO' ? 'Rapido' : 'Ola'} App 🚀`,
             onPress: () => {
               onClose();
               launchDriverApp(platform);
@@ -120,7 +130,7 @@ export default function QuickRideLoggerModal({
       );
     } catch (err) {
       console.error('Failed to log shift ride:', err);
-      Alert.alert('Save Error', err.message || 'Ride save nahi ho saki.');
+      Alert.alert('Save Error', err.message || 'Unable to save ride. Please check network.');
     } finally {
       setSaving(false);
     }
@@ -170,13 +180,13 @@ export default function QuickRideLoggerModal({
         <View style={styles.sheetContainer}>
           {/* Header Bar */}
           <View style={styles.sheetHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={styles.boltIcon}>
-                <Text style={{ fontSize: 16 }}>⚡</Text>
+                <Text style={{ fontSize: 18 }}>⚡</Text>
               </View>
               <View>
-                <Text style={styles.sheetTitle}>Quick Ride Log</Text>
-                <Text style={styles.sheetSub}>Ride khatam? 2 second me hisaab save karein</Text>
+                <Text style={styles.sheetTitle}>Quick Ride Entry (விரைவு பதிவு)</Text>
+                <Text style={styles.sheetSub}>3-tap fast save • Record fare in 2 seconds</Text>
               </View>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -184,9 +194,9 @@ export default function QuickRideLoggerModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
             {/* Step 1: Select Platform */}
-            <Text style={styles.sectionLabel}>1. PLATFORM CHUNIYE (Kaunsi ride thi?)</Text>
+            <Text style={styles.sectionLabel}>1. SELECT PLATFORM (பிளாட்ஃபார்ம்)</Text>
             <View style={styles.platformRow}>
               <TouchableOpacity
                 style={[styles.platformCard, platform === 'OLA' && styles.platformCardOlaActive]}
@@ -195,6 +205,7 @@ export default function QuickRideLoggerModal({
               >
                 <Text style={styles.platformEmoji}>🚕</Text>
                 <Text style={[styles.platformTitle, platform === 'OLA' && styles.platformTextOlaActive]}>OLA</Text>
+                <Text style={styles.platformSub}>Ola Partner</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -204,6 +215,7 @@ export default function QuickRideLoggerModal({
               >
                 <Text style={styles.platformEmoji}>🚗</Text>
                 <Text style={[styles.platformTitle, platform === 'UBER' && styles.platformTextUberActive]}>UBER</Text>
+                <Text style={styles.platformSub}>Uber Driver</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -213,22 +225,23 @@ export default function QuickRideLoggerModal({
               >
                 <Text style={styles.platformEmoji}>🛵</Text>
                 <Text style={[styles.platformTitle, platform === 'RAPIDO' && styles.platformTextRapidoActive]}>RAPIDO</Text>
+                <Text style={styles.platformSub}>Captain</Text>
               </TouchableOpacity>
             </View>
 
             {/* Step 2: Payment Method */}
-            <Text style={styles.sectionLabel}>2. PAYMENT METHOD (Paisa kaise mila?)</Text>
+            <Text style={styles.sectionLabel}>2. PAYMENT METHOD (பணம் முறை)</Text>
             <View style={styles.paymentRow}>
               <TouchableOpacity
                 style={[styles.paymentCard, paymentMethod === 'CASH' && styles.paymentCardCashActive]}
                 onPress={() => setPaymentMethod('CASH')}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 20, marginBottom: 2 }}>💵</Text>
+                <Text style={{ fontSize: 22, marginBottom: 2 }}>💵</Text>
                 <Text style={[styles.paymentTitle, paymentMethod === 'CASH' && styles.paymentTextCashActive]}>
-                  CASH
+                  CASH (ரொக்கம்)
                 </Text>
-                <Text style={styles.paymentSub}>Poora Cash</Text>
+                <Text style={styles.paymentSub}>Passenger paid Cash</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -236,11 +249,11 @@ export default function QuickRideLoggerModal({
                 onPress={() => setPaymentMethod('UPI')}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 20, marginBottom: 2 }}>📲</Text>
+                <Text style={{ fontSize: 22, marginBottom: 2 }}>📲</Text>
                 <Text style={[styles.paymentTitle, paymentMethod === 'UPI' && styles.paymentTextUpiActive]}>
-                  UPI
+                  ONLINE / UPI
                 </Text>
-                <Text style={styles.paymentSub}>Poora Online</Text>
+                <Text style={styles.paymentSub}>App / QR Payment</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -248,7 +261,7 @@ export default function QuickRideLoggerModal({
                 onPress={() => setPaymentMethod('SPLIT')}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 20, marginBottom: 2 }}>⚡</Text>
+                <Text style={{ fontSize: 22, marginBottom: 2 }}>⚡</Text>
                 <Text style={[styles.paymentTitle, paymentMethod === 'SPLIT' && styles.paymentTextSplitActive]}>
                   SPLIT
                 </Text>
@@ -259,16 +272,16 @@ export default function QuickRideLoggerModal({
             {/* Step 3: Fare Amount / Split Inputs */}
             {paymentMethod === 'SPLIT' ? (
               <View style={styles.splitSection}>
-                <Text style={styles.sectionLabel}>3. SPLIT AMOUNT (Cash aur UPI dono daalein)</Text>
+                <Text style={styles.sectionLabel}>3. SPLIT AMOUNT (Cash & UPI)</Text>
 
                 {/* Cash Input */}
                 <View style={styles.splitInputBox}>
-                  <Text style={styles.splitInputTitleCash}>💵 Cash Amount (Hath me mila)</Text>
+                  <Text style={styles.splitInputTitleCash}>💵 Cash Collected (ரொக்கம்)</Text>
                   <View style={[styles.inputContainer, styles.inputContainerCash]}>
                     <Text style={[styles.currencySymbol, { color: '#10B981' }]}>₹</Text>
                     <TextInput
                       style={styles.fareInput}
-                      placeholder="Cash amount (e.g. 50)"
+                      placeholder="e.g. 50"
                       placeholderTextColor="#64748B"
                       keyboardType="numeric"
                       value={splitCash}
@@ -279,12 +292,12 @@ export default function QuickRideLoggerModal({
 
                 {/* UPI Input */}
                 <View style={styles.splitInputBox}>
-                  <Text style={styles.splitInputTitleUpi}>📲 UPI Amount (Online / QR mila)</Text>
+                  <Text style={styles.splitInputTitleUpi}>📲 UPI / Online Received</Text>
                   <View style={[styles.inputContainer, styles.inputContainerUpi]}>
                     <Text style={[styles.currencySymbol, { color: '#60A5FA' }]}>₹</Text>
                     <TextInput
                       style={styles.fareInput}
-                      placeholder="UPI amount (e.g. 100)"
+                      placeholder="e.g. 100"
                       placeholderTextColor="#64748B"
                       keyboardType="numeric"
                       value={splitUpi}
@@ -296,7 +309,7 @@ export default function QuickRideLoggerModal({
                 {/* Total Breakdown Banner */}
                 <View style={styles.splitTotalBanner}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={styles.splitTotalLabel}>TOTAL KIRAYA (FARE):</Text>
+                    <Text style={styles.splitTotalLabel}>TOTAL FARE (மொத்த கட்டணம்):</Text>
                     <Text style={styles.splitTotalValue}>₹{parsedSplitTotal}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
@@ -311,9 +324,9 @@ export default function QuickRideLoggerModal({
               </View>
             ) : (
               <View>
-                <Text style={styles.sectionLabel}>3. FARE AMOUNT (Total Kiraya ₹)</Text>
+                <Text style={styles.sectionLabel}>3. TAP FARE AMOUNT (கட்டணம் தேர்வு செய்க)</Text>
                 
-                {/* Quick Fare Chips */}
+                {/* 1-Tap Quick Fare Buttons (Optimized for Bike Taxi Fares) */}
                 <View style={styles.chipsWrap}>
                   {PRESET_FARES.map((amt) => {
                     const isSelected = parsedFare === amt;
@@ -322,7 +335,7 @@ export default function QuickRideLoggerModal({
                         key={amt}
                         style={[styles.fareChip, isSelected && styles.fareChipActive]}
                         onPress={() => handlePresetSelect(amt)}
-                        activeOpacity={0.7}
+                        activeOpacity={0.75}
                       >
                         <Text style={[styles.fareChipText, isSelected && styles.fareChipTextActive]}>
                           ₹{amt}
@@ -332,58 +345,62 @@ export default function QuickRideLoggerModal({
                   })}
                 </View>
 
-                {/* Custom Amount Input */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.currencySymbol}>₹</Text>
-                  <TextInput
-                    style={styles.fareInput}
-                    placeholder="Ya yahan amount daalein (e.g. 145)"
-                    placeholderTextColor="#64748B"
-                    keyboardType="numeric"
-                    value={fare}
-                    onChangeText={setFare}
-                  />
+                {/* Custom Amount Input Box */}
+                <View style={styles.customInputRow}>
+                  <Text style={styles.customInputLabel}>Or enter exact amount (வேறு கட்டணம்):</Text>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.currencySymbol}>₹</Text>
+                    <TextInput
+                      style={styles.fareInput}
+                      placeholder="Type fare (e.g. 145)"
+                      placeholderTextColor="#64748B"
+                      keyboardType="numeric"
+                      value={fare}
+                      onChangeText={setFare}
+                    />
+                  </View>
                 </View>
 
                 {/* Real-time Confirmation Badge */}
                 {parsedFare > 0 && (
                   <View style={styles.summaryPill}>
                     <Text style={styles.summaryPillText}>
-                      Logging: <Text style={{ color: '#F8FAFC', fontWeight: '900' }}>{platform}</Text> •{' '}
+                      Ready to Log: <Text style={{ color: '#F8FAFC', fontWeight: '900' }}>{platform}</Text> •{' '}
                       <Text style={{ color: paymentMethod === 'CASH' ? '#34D399' : '#60A5FA', fontWeight: '900' }}>
-                        {paymentMethod === 'CASH' ? 'Cash' : 'UPI Online'}
+                        {paymentMethod === 'CASH' ? 'Cash' : 'Online UPI'}
                       </Text>{' '}
                       • <Text style={{ color: '#FCD34D', fontWeight: '900' }}>₹{parsedFare}</Text>
+                      {' '}(Your 50%: <Text style={{ color: '#34D399', fontWeight: '900' }}>₹{estDriverShare}</Text>)
                     </Text>
                   </View>
                 )}
               </View>
             )}
 
-            {/* Save Button */}
+            {/* Prominent Save Button */}
             <TouchableOpacity
               style={[styles.saveBtn, effectiveFare <= 0 && styles.saveBtnDisabled]}
               onPress={handleSave}
               disabled={saving || effectiveFare <= 0}
-              activeOpacity={0.8}
+              activeOpacity={0.88}
             >
               {saving ? (
                 <ActivityIndicator color="#0F172A" />
               ) : (
                 <Text style={styles.saveBtnText}>
-                  ⚡ SAVE {paymentMethod === 'SPLIT' ? 'SPLIT ' : ''}RIDE (₹{effectiveFare > 0 ? effectiveFare : '0'})
+                  💾 SAVE RIDE (₹{effectiveFare > 0 ? effectiveFare : '0'}) • சேமிக்கவும் ➔
                 </Text>
               )}
             </TouchableOpacity>
 
-            {/* Quick Switch to Partner App */}
+            {/* Quick Switch to Partner App Bar */}
             <View style={styles.appSwitchSection}>
-              <Text style={styles.appSwitchLabel}>Switch back to driver app:</Text>
+              <Text style={styles.appSwitchLabel}>Return to Driving App:</Text>
               <View style={styles.appSwitchRow}>
                 <TouchableOpacity
                   style={styles.switchAppBtn}
                   onPress={() => launchDriverApp('OLA')}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
                   <Text style={styles.switchAppText}>🚕 Ola Driver</Text>
                 </TouchableOpacity>
@@ -391,7 +408,7 @@ export default function QuickRideLoggerModal({
                 <TouchableOpacity
                   style={styles.switchAppBtn}
                   onPress={() => launchDriverApp('UBER')}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
                   <Text style={styles.switchAppText}>🚗 Uber Driver</Text>
                 </TouchableOpacity>
@@ -399,7 +416,7 @@ export default function QuickRideLoggerModal({
                 <TouchableOpacity
                   style={styles.switchAppBtn}
                   onPress={() => launchDriverApp('RAPIDO')}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
                   <Text style={styles.switchAppText}>🛵 Rapido</Text>
                 </TouchableOpacity>
@@ -415,7 +432,7 @@ export default function QuickRideLoggerModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
     justifyContent: 'flex-end'
   },
   sheetContainer: {
@@ -423,16 +440,16 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: '#334155',
-    padding: 20,
-    maxHeight: '92%'
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    padding: 18,
+    maxHeight: '94%'
   },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    paddingBottom: 14,
+    marginBottom: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#1E293B'
   },
@@ -440,141 +457,139 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.4)',
+    backgroundColor: '#0284C7',
     alignItems: 'center',
     justifyContent: 'center'
   },
   sheetTitle: {
     color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.3
+    fontSize: 16,
+    fontWeight: '800'
   },
   sheetSub: {
     color: '#94A3B8',
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 1
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#334155'
+    justifyContent: 'center'
   },
   closeBtnText: {
     color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '700'
+    fontSize: 16,
+    fontWeight: 'bold'
   },
   sectionLabel: {
     color: '#CBD5E1',
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
     marginBottom: 8,
-    marginTop: 10
+    marginTop: 4
   },
   platformRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12
+    marginBottom: 14
   },
   platformCard: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#334155'
+    borderColor: 'rgba(255, 255, 255, 0.08)'
   },
   platformCardOlaActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    borderColor: '#F59E0B'
+    borderColor: '#EAB308',
+    backgroundColor: 'rgba(234, 179, 8, 0.12)'
   },
   platformCardUberActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderColor: '#FFFFFF'
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)'
   },
   platformCardRapidoActive: {
-    backgroundColor: 'rgba(234, 179, 8, 0.15)',
-    borderColor: '#EAB308'
+    borderColor: '#F59E0B',
+    backgroundColor: 'rgba(245, 158, 11, 0.12)'
   },
   platformEmoji: {
     fontSize: 22,
-    marginBottom: 4
+    marginBottom: 2
   },
   platformTitle: {
     color: '#94A3B8',
-    fontWeight: '800',
-    fontSize: 13
+    fontSize: 13,
+    fontWeight: '800'
   },
   platformTextOlaActive: {
-    color: '#FCD34D'
+    color: '#FACC15'
   },
   platformTextUberActive: {
-    color: '#FFFFFF'
+    color: '#38BDF8'
   },
   platformTextRapidoActive: {
-    color: '#FDE047'
+    color: '#FBBF24'
+  },
+  platformSub: {
+    color: '#64748B',
+    fontSize: 9,
+    marginTop: 1
   },
   paymentRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12
+    marginBottom: 14
   },
   paymentCard: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: 12,
     paddingVertical: 10,
-    paddingHorizontal: 4,
+    alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#334155'
+    borderColor: 'rgba(255, 255, 255, 0.08)'
   },
   paymentCardCashActive: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderColor: '#10B981'
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)'
   },
   paymentCardUpiActive: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-    borderColor: '#3B82F6'
+    borderColor: '#38BDF8',
+    backgroundColor: 'rgba(56, 189, 248, 0.12)'
   },
   paymentCardSplitActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.18)',
-    borderColor: '#F59E0B'
+    borderColor: '#A855F7',
+    backgroundColor: 'rgba(168, 85, 247, 0.12)'
   },
   paymentTitle: {
     color: '#94A3B8',
+    fontSize: 11,
     fontWeight: '800',
-    fontSize: 12,
-    marginTop: 2
+    textAlign: 'center'
   },
   paymentTextCashActive: {
     color: '#34D399'
   },
   paymentTextUpiActive: {
-    color: '#60A5FA'
+    color: '#38BDF8'
   },
   paymentTextSplitActive: {
-    color: '#FCD34D'
+    color: '#C084FC'
   },
   paymentSub: {
     color: '#64748B',
-    fontSize: 9,
-    marginTop: 2,
+    fontSize: 8,
+    marginTop: 1,
     textAlign: 'center'
   },
   splitSection: {
-    marginBottom: 6
+    marginBottom: 14
   },
   splitInputBox: {
     marginBottom: 10
@@ -582,121 +597,130 @@ const styles = StyleSheet.create({
   splitInputTitleCash: {
     color: '#34D399',
     fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
-    letterSpacing: 0.3
+    fontWeight: '700',
+    marginBottom: 4
   },
   splitInputTitleUpi: {
     color: '#60A5FA',
     fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 6,
-    letterSpacing: 0.3
-  },
-  inputContainerCash: {
-    borderColor: 'rgba(16, 185, 129, 0.5)',
-    marginBottom: 0
-  },
-  inputContainerUpi: {
-    borderColor: 'rgba(59, 130, 246, 0.5)',
-    marginBottom: 0
+    fontWeight: '700',
+    marginBottom: 4
   },
   splitTotalBanner: {
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(245, 158, 11, 0.45)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderRadius: 10,
     padding: 12,
-    marginTop: 6,
-    marginBottom: 12
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    marginTop: 4
   },
   splitTotalLabel: {
-    color: '#FCD34D',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.5
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '800'
   },
   splitTotalValue: {
     color: '#FCD34D',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900'
   },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 12
+    marginBottom: 14
   },
   fareChip: {
-    backgroundColor: '#1E293B',
-    borderWidth: 1,
-    borderColor: '#334155',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20
+    width: '18%',
+    minWidth: 58,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)'
   },
   fareChipActive: {
-    backgroundColor: '#F59E0B',
-    borderColor: '#F59E0B'
+    backgroundColor: '#0284C7',
+    borderColor: '#38BDF8',
+    shadowColor: '#38BDF8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 4
   },
   fareChipText: {
-    color: '#E2E8F0',
-    fontWeight: '700',
-    fontSize: 14
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800'
   },
   fareChipTextActive: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontWeight: '900'
+  },
+  customInputRow: {
+    marginBottom: 14
+  },
+  customInputLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    marginBottom: 6
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1E293B',
-    borderWidth: 1.5,
-    borderColor: '#334155',
     borderRadius: 12,
-    paddingHorizontal: 14,
-    marginBottom: 14
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  inputContainerCash: {
+    borderColor: 'rgba(16, 185, 129, 0.3)'
+  },
+  inputContainerUpi: {
+    borderColor: 'rgba(56, 189, 248, 0.3)'
   },
   currencySymbol: {
-    color: '#F59E0B',
-    fontSize: 22,
-    fontWeight: '900',
-    marginRight: 8
+    color: '#94A3B8',
+    fontSize: 18,
+    fontWeight: '800',
+    marginRight: 6
   },
   fareInput: {
     flex: 1,
-    height: 48,
     color: '#F8FAFC',
     fontSize: 16,
-    fontWeight: '700'
+    fontWeight: '700',
+    paddingVertical: 10
   },
   summaryPill: {
-    backgroundColor: 'rgba(30, 41, 59, 0.9)',
-    borderWidth: 1,
-    borderColor: '#475569',
+    backgroundColor: 'rgba(2, 132, 199, 0.12)',
     borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     marginBottom: 14,
-    alignItems: 'center'
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)'
   },
   summaryPillText: {
-    color: '#94A3B8',
-    fontSize: 13
+    color: '#BAE6FD',
+    fontSize: 12,
+    fontWeight: '600'
   },
   saveBtn: {
     backgroundColor: '#10B981',
     borderRadius: 14,
-    paddingVertical: 16,
+    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
-    elevation: 4
+    elevation: 6
   },
   saveBtnDisabled: {
     backgroundColor: '#334155',
@@ -704,9 +728,9 @@ const styles = StyleSheet.create({
     elevation: 0
   },
   saveBtnText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: '900',
-    fontSize: 16,
     letterSpacing: 0.5
   },
   appSwitchSection: {
@@ -716,9 +740,10 @@ const styles = StyleSheet.create({
   },
   appSwitchLabel: {
     color: '#64748B',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    marginBottom: 8
+    marginBottom: 8,
+    letterSpacing: 0.5
   },
   appSwitchRow: {
     flexDirection: 'row',
@@ -726,12 +751,12 @@ const styles = StyleSheet.create({
   },
   switchAppBtn: {
     flex: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     borderRadius: 8,
     paddingVertical: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155'
+    borderColor: 'rgba(255, 255, 255, 0.08)'
   },
   switchAppText: {
     color: '#CBD5E1',

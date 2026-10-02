@@ -142,6 +142,11 @@ export default function RegistrationScreen({ navigation }) {
       return;
     }
 
+    if (!currentUser?.uid) {
+      Alert.alert('Session Expired', 'Driver authentication session is missing. Please sign in again.');
+      return;
+    }
+
     setLoading(true);
     try {
       const mobileNumber =

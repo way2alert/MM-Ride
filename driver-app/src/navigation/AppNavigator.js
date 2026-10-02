@@ -53,10 +53,10 @@ export default function AppNavigator() {
     return <SuspendedScreen />;
   }
 
-  // Registered but profile details not submitted -> Show Registration
-  if (!driverProfile || driverProfile.accountStatus === 'REGISTERED') {
+  // Profile submitted or explicitly navigated to Document Upload
+  if (currentScreen === 'DocumentUpload' || driverProfile?.accountStatus === 'DOCUMENTS_SUBMITTED') {
     return (
-      <RegistrationScreen
+      <DocumentUploadScreen
         navigation={{
           navigate: (screen) => setCurrentScreen(screen)
         }}
@@ -64,10 +64,10 @@ export default function AppNavigator() {
     );
   }
 
-  // Profile submitted but documents pending -> Show Document Upload
-  if (driverProfile.accountStatus === 'DOCUMENTS_SUBMITTED') {
+  // Registered but profile details not submitted -> Show Registration
+  if (!driverProfile || driverProfile.accountStatus === 'REGISTERED') {
     return (
-      <DocumentUploadScreen
+      <RegistrationScreen
         navigation={{
           navigate: (screen) => setCurrentScreen(screen)
         }}

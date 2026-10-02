@@ -75,17 +75,30 @@ service cloud.firestore {
       allow read: if isOwner(driverId) || isAdmin();
       // Driver can self-register
       allow create: if isOwner(driverId)
-        && request.resource.data.approvalStatus == 'PENDING';
+        && (
+          !('approvalStatus' in request.resource.data) ||
+          request.resource.data.approvalStatus == 'PENDING'
+        );
       // Driver can update basic profile fields (phone, address, emergency contact, device info, bank info),
       // and can auto-link an available vehicle once application is APPROVED
       allow update: if (
         isOwner(driverId)
-        && request.resource.data.approvalStatus == resource.data.approvalStatus
         && (
-          (resource.data.approvalStatus == 'APPROVED' && request.resource.data.accountStatus in ['BIKE_ASSIGNED', 'BIKE_HANDOVER_PENDING']) ||
+          // Driver cannot self-approve; approvalStatus must stay PENDING or match current status
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus']) ||
+          request.resource.data.approvalStatus == 'PENDING' ||
+          (resource.data.approvalStatus != null && request.resource.data.approvalStatus == resource.data.approvalStatus)
+        )
+        && (
+          // Driver cannot modify suspension flags
           !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'approvalStatus', 'assignedBikeId', 'isSuspended', 'suspensionReason'
+            'isSuspended', 'suspensionReason'
           ])
+        )
+        && (
+          // Driver can only set assignedBikeId once approved
+          (resource.data.approvalStatus == 'APPROVED' && request.resource.data.accountStatus in ['BIKE_ASSIGNED', 'BIKE_HANDOVER_PENDING']) ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedBikeId'])
         )
       ) || isAdmin();
       allow delete: if isAdmin(); // Allow Admin to delete / reset test drivers
@@ -119,7 +132,12 @@ service cloud.firestore {
       allow update: if (
         isAuthenticated() &&
         resource.data.driverId == request.auth.uid &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified', 'verifiedAt', 'verifiedBy', 'verificationNotes'])
+        (
+          // Driver cannot self-verify address (can only set false or keep unchanged)
+          request.resource.data.isVerified == false ||
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified'])
+        ) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verifiedAt', 'verifiedBy', 'verificationNotes'])
       ) || isOperations();
       allow delete: if false;
     }

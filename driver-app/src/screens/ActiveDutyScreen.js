@@ -23,8 +23,9 @@ import { useKeepAwake } from 'expo-keep-awake';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
 import QuickRideLoggerModal from '../components/QuickRideLoggerModal';
+import FloatingShiftOverlayHUD from '../components/FloatingShiftOverlayHUD';
 
-export default function ActiveDutyScreen({ navigation }) {
+export default function ActiveDutyScreen({ navigation, route }) {
   useKeepAwake();
   const { 
     currentUser,
@@ -78,9 +79,15 @@ export default function ActiveDutyScreen({ navigation }) {
   const [showWelfareModal, setShowWelfareModal] = useState(false);
   const [welfareCountdown, setWelfareCountdown] = useState(60);
 
-  // Quick Floating Ride Logger State
+  // Permanent Sticky Bottom Ride Logger State
   const [showQuickRideModal, setShowQuickRideModal] = useState(false);
+  const [quickRidePlatform, setQuickRidePlatform] = useState('OLA');
   const [shiftRides, setShiftRides] = useState([]);
+
+  const handleOpenQuickLogger = (selectedPlatform = 'OLA') => {
+    setQuickRidePlatform(selectedPlatform);
+    setShowQuickRideModal(true);
+  };
 
   // Real-time listener for today's shift ride entries
   useEffect(() => {
@@ -528,12 +535,12 @@ export default function ActiveDutyScreen({ navigation }) {
       Alert.alert('Invalid Odometer', 'Please enter the current odometer reading at the petrol pump.');
       return;
     }
-    if (!dispenserPhoto) {
-      Alert.alert('Dispenser Photo Required', 'You must photograph the petrol pump dispenser screen showing Litres and Amount.');
+    if (!meterPhoto) {
+      Alert.alert('Odometer Photo Required', 'Please photograph the bike odometer / speedometer console.');
       return;
     }
-    if (!meterPhoto) {
-      Alert.alert('Odometer Photo Required', 'You must photograph the bike speedometer / fuel meter at the pump.');
+    if (!receiptPhoto) {
+      Alert.alert('Pump Bill Required', 'Please photograph the petrol pump cash bill / printed receipt.');
       return;
     }
 
@@ -546,7 +553,7 @@ export default function ActiveDutyScreen({ navigation }) {
         amount: amt,
         litres: ltr,
         odometer: odo,
-        dispenserPhotoUri: dispenserPhoto,
+        dispenserPhotoUri: null,
         meterPhotoUri: meterPhoto,
         receiptPhotoUri: receiptPhoto,
         gps: currentLocation
@@ -555,12 +562,11 @@ export default function ActiveDutyScreen({ navigation }) {
       setShowFuelModal(false);
       setFuelAmount('');
       setFuelLitres('');
-      setDispenserPhoto(null);
       setMeterPhoto(null);
       setReceiptPhoto(null);
       Alert.alert(
         'Fuel Fill Logged ✅',
-        'Your petrol fill has been recorded. It will be 3-way verified against GPS km and approved in your shift settlement.'
+        'Your petrol fill has been recorded with bike odometer & pump bill proofs. It will be verified and approved in your shift settlement.'
       );
     } catch (err) {
       Alert.alert('Submission Error', err.message);
@@ -698,7 +704,7 @@ export default function ActiveDutyScreen({ navigation }) {
 
         {/* Speedometer & Live Telemetry Gauge */}
         <View style={[styles.speedCard, isOverspeed && styles.speedCardAlert]}>
-          <Text style={styles.speedLabel}>LIVE GPS SPEED (Raftar)</Text>
+          <Text style={styles.speedLabel}>LIVE GPS SPEED (வேகம்)</Text>
           <View style={styles.speedValueRow}>
             <Text style={[styles.speedValue, isOverspeed && styles.speedAlertText]}>
               {currentSpeed}
@@ -707,14 +713,14 @@ export default function ActiveDutyScreen({ navigation }) {
           </View>
           <Text style={[styles.speedSub, isOverspeed ? styles.speedAlertText : styles.speedOkText]}>
             {isOverspeed
-              ? `⚠️ SPEED LIMIT EXCEEDED (Max: ${speedLimit} km/h). Kripya dheere chalayein!`
-              : `🟢 Within Safe Speed Limit (${speedLimit} km/h) • Safe riding`}
+              ? `⚠️ SPEED LIMIT EXCEEDED (Max: ${speedLimit} km/h). Please slow down! (வேகத்தை குறைக்கவும்)`
+              : `🟢 Safe Speed (${speedLimit} km/h Limit) • GPS Tracking Active`}
           </Text>
         </View>
 
         {/* 12-Hour Duty Duration HUD */}
         <View style={[styles.timerCard, (isLimitReached || isNearLimit) && styles.timerNearLimit]}>
-          <Text style={styles.timerLabel}>CURRENT SHIFT DURATION (Shift Samay)</Text>
+          <Text style={styles.timerLabel}>CURRENT SHIFT DURATION (பணி நேரம்)</Text>
           <Text style={styles.timerValue}>
             {Math.floor(elapsedMinutes / 60)}h {elapsedMinutes % 60}m
           </Text>
@@ -724,13 +730,13 @@ export default function ActiveDutyScreen({ navigation }) {
           {isLimitReached ? (
             <View style={[styles.limitWarningBadge, { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.5)' }]}>
               <Text style={[styles.limitWarningText, { color: '#F87171' }]}>
-                🛑 MAXIMUM DAILY DUTY OF {maxDutyHours} HOURS REACHED. Kripya turant depot laut kar duty samapt karein.
+                🛑 MAXIMUM DAILY DUTY OF {maxDutyHours} HOURS REACHED. Please return to depot and end shift.
               </Text>
             </View>
           ) : isNearLimit ? (
             <View style={styles.limitWarningBadge}>
               <Text style={styles.limitWarningText}>
-                ⚠️ Approaching {maxDutyHours}-Hour Daily Limit ({remainingTodayMinutes}m remaining). Kripya jald depot laut kar duty samapt karein.
+                ⚠️ Approaching {maxDutyHours}-Hour Daily Limit ({remainingTodayMinutes}m remaining). Please return to depot soon.
               </Text>
             </View>
           ) : null}
@@ -829,16 +835,9 @@ export default function ActiveDutyScreen({ navigation }) {
               <Text style={{ fontSize: 22 }}>⚡</Text>
               <View>
                 <Text style={styles.rideTrackerTitle}>TODAY'S SHIFT EARNINGS</Text>
-                <Text style={styles.rideTrackerSub}>Ola & Uber rides live counter</Text>
+                <Text style={styles.rideTrackerSub}>இன்றைய பயண வருமானம்</Text>
               </View>
             </View>
-            <TouchableOpacity
-              style={styles.logRideMiniBtn}
-              onPress={() => setShowQuickRideModal(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.logRideMiniBtnText}>+ Log Ride ⚡</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={styles.rideTrackerStatsRow}>
@@ -851,7 +850,7 @@ export default function ActiveDutyScreen({ navigation }) {
               <Text style={[styles.rideStatVal, { color: '#FCD34D' }]}>₹{totalGrossLogged}</Text>
             </View>
             <View style={styles.rideStatBox}>
-              <Text style={styles.rideStatLabel}>AAPKA 50%</Text>
+              <Text style={styles.rideStatLabel}>YOUR 50% SHARE</Text>
               <Text style={[styles.rideStatVal, { color: '#34D399' }]}>₹{driverEstShare}</Text>
             </View>
           </View>
@@ -865,24 +864,15 @@ export default function ActiveDutyScreen({ navigation }) {
             </View>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+          {totalRidesLogged > 0 && (
             <TouchableOpacity
-              style={styles.logRideBigBtn}
-              onPress={() => setShowQuickRideModal(true)}
+              style={styles.reviewSummaryBtn}
+              onPress={() => navigation?.navigate && navigation.navigate('SubmitDailyEarnings')}
               activeOpacity={0.8}
             >
-              <Text style={styles.logRideBigBtnText}>⚡ Quick Log Ride (Ola / Uber)</Text>
+              <Text style={styles.reviewSummaryBtnText}>📊 View Shift Breakdown & Trip List ➔</Text>
             </TouchableOpacity>
-            {totalRidesLogged > 0 && (
-              <TouchableOpacity
-                style={styles.reviewHisaabBtn}
-                onPress={() => navigation?.navigate && navigation.navigate('SubmitDailyEarnings')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.reviewHisaabBtnText}>Hisaab ➔</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          )}
         </View>
 
         {/* Primary Controls */}
@@ -901,23 +891,16 @@ export default function ActiveDutyScreen({ navigation }) {
           />
 
           <BigButton
-            title="Take a Break (Break Lein) ⏸️"
+            title="Take a Break ⏸️"
             onPress={() => navigation?.navigate && navigation.navigate('Break')}
             variant="secondary"
             style={{ marginBottom: 12 }}
           />
 
           <BigButton
-            title="Return Bike / End Duty (Shift Khatam Karein) 🏁"
+            title="Return Bike / End Duty 🏁"
             onPress={() => navigation?.navigate && navigation.navigate('EndDuty')}
             variant="primary"
-            style={{ marginBottom: 12 }}
-          />
-
-          <BigButton
-            title="EMERGENCY SOS 🚨"
-            onPress={() => navigation?.navigate && navigation.navigate('EmergencySOS')}
-            variant="danger"
           />
         </View>
       </ScrollView>
@@ -932,7 +915,7 @@ export default function ActiveDutyScreen({ navigation }) {
           <View style={styles.modalBox}>
             <Text style={styles.idleEmoji}>⚠️</Text>
             <Text style={styles.idleTitle}>Stationary Idle Alert</Text>
-            <Text style={styles.idleTitleHindi}>(Aap 30 min se ruke hue hain)</Text>
+            <Text style={styles.idleTitleHindi}>(30 நிமிடங்களாக வாகனம் ஒரே இடத்தில் உள்ளது)</Text>
             <Text style={styles.idleMessage}>
               You have been inactive / stationary for over 30 minutes. Please enter your reason for Operations record.
             </Text>
@@ -1116,7 +1099,7 @@ export default function ActiveDutyScreen({ navigation }) {
                 </Text>
               </View>
 
-              {/* Anti-Fraud Three-Way Verification Notice */}
+              {/* Proof Requirements Notice */}
               <View style={{
                 backgroundColor: 'rgba(245, 158, 11, 0.1)',
                 borderWidth: 1,
@@ -1126,10 +1109,11 @@ export default function ActiveDutyScreen({ navigation }) {
                 marginBottom: 16
               }}>
                 <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '800', marginBottom: 2 }}>
-                  🔒 THREE-WAY AUDIT ACTIVE
+                  🔒 2 MANDATORY FUEL PROOFS REQUIRED
                 </Text>
                 <Text style={{ color: '#E2E8F0', fontSize: 11, lineHeight: 16 }}>
-                  Litres filled are automatically reconciled with shift GPS distance and Odometer delta. Bills without pump screen photos or duplicate claims will be rejected automatically.
+                  1. Bike Odometer & Speedometer Photo{'\n'}
+                  2. Petrol pump cash bill / printed receipt
                 </Text>
               </View>
 
@@ -1169,42 +1153,10 @@ export default function ActiveDutyScreen({ navigation }) {
                 onChangeText={setFuelOdometer}
               />
 
-              {/* Photo Proof 1: Dispenser Machine */}
+              {/* Photo Proof 1: Bike Odometer */}
               <View style={{ marginBottom: 14 }}>
                 <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
-                  1. Dispenser Machine Screen Photo * (Litres & ₹)
-                </Text>
-                {dispenserPhoto ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Image source={{ uri: dispenserPhoto }} style={{ width: 70, height: 70, borderRadius: 8 }} />
-                    <TouchableOpacity onPress={() => handleCaptureFuelPhoto('dispenser')}>
-                      <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '700' }}>🔄 Retake Photo</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={{
-                      backgroundColor: '#334155',
-                      padding: 12,
-                      borderRadius: 8,
-                      alignItems: 'center',
-                      borderWidth: 1,
-                      borderColor: '#475569',
-                      borderStyle: 'dashed'
-                    }}
-                    onPress={() => handleCaptureFuelPhoto('dispenser')}
-                  >
-                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>
-                      📸 Capture Dispenser Screen (Machine)
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Photo Proof 2: Bike Odometer & Fuel Meter */}
-              <View style={{ marginBottom: 14 }}>
-                <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
-                  2. Bike Odometer & Fuel Gauge Console *
+                  1. Bike Odometer & Speedometer Photo * (Mandatory)
                 </Text>
                 {meterPhoto ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1227,16 +1179,16 @@ export default function ActiveDutyScreen({ navigation }) {
                     onPress={() => handleCaptureFuelPhoto('meter')}
                   >
                     <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>
-                      📸 Capture Bike Speedometer / Fuel Meter
+                      📸 Capture Bike Speedometer / Odometer
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
 
-              {/* Photo Proof 3: Receipt Bill (Optional but Recommended) */}
+              {/* Photo Proof 2: Pump Cash Bill */}
               <View style={{ marginBottom: 20 }}>
                 <Text style={{ color: '#F8FAFC', fontSize: 12, fontWeight: '700', marginBottom: 6 }}>
-                  3. Pump Cash Bill / Printed Receipt (Optional)
+                  2. Pump Cash Bill / Printed Receipt * (Mandatory)
                 </Text>
                 {receiptPhoto ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1258,8 +1210,8 @@ export default function ActiveDutyScreen({ navigation }) {
                     }}
                     onPress={() => handleCaptureFuelPhoto('receipt')}
                   >
-                    <Text style={{ color: '#94A3B8', fontSize: 12 }}>
-                      🧾 Capture Printed Pump Receipt (Optional)
+                    <Text style={{ color: '#E2E8F0', fontSize: 12, fontWeight: '700' }}>
+                      🧾 Capture Pump Cash Bill (Receipt)
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1381,33 +1333,15 @@ export default function ActiveDutyScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* Floating Bottom Quick Action Pill */}
-      <View style={styles.floatingActionBar}>
-        <TouchableOpacity
-          style={styles.floatingActionBtn}
-          onPress={() => setShowQuickRideModal(true)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.floatingActionContent}>
-            <View style={styles.floatingBoltBadge}>
-              <Text style={{ fontSize: 16 }}>⚡</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.floatingActionTitle}>
-                {totalRidesLogged > 0 ? `Log Ride #${totalRidesLogged + 1} (Cash / UPI)` : '⚡ Log Completed Ride'}
-              </Text>
-              <Text style={styles.floatingActionSub} numberOfLines={1}>
-                {totalRidesLogged > 0
-                  ? `${totalRidesLogged} rides • ₹${totalGrossLogged} earned today (50%: ₹${driverEstShare})`
-                  : 'Tap after passenger drop-off • 2 sec quick save'}
-              </Text>
-            </View>
-            <View style={styles.floatingActionArrow}>
-              <Text style={{ color: '#0F172A', fontWeight: '900', fontSize: 16 }}>+</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </View>
+      {/* Permanent Sticky Bottom Console: Ola, Uber, Rapido 1-Tap Loggers & Launchers */}
+      <FloatingShiftOverlayHUD
+        bikeRegistration={assignedBike?.registrationNumber || driverProfile?.assignedBikeRegistration || 'TN 01 AB 1234'}
+        totalRides={totalRidesLogged}
+        totalGross={totalGrossLogged}
+        driverShare={driverEstShare}
+        elapsedMinutes={elapsedMinutes}
+        onOpenQuickLogger={handleOpenQuickLogger}
+      />
 
       {/* Quick Ride Logger Modal */}
       <QuickRideLoggerModal
@@ -1416,6 +1350,7 @@ export default function ActiveDutyScreen({ navigation }) {
         driverId={driverId}
         dutyId={activeDutySession?.id}
         currentLocation={currentLocation}
+        initialPlatform={quickRidePlatform}
       />
     </View>
   );
@@ -1428,7 +1363,7 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 18,
-    paddingBottom: 110
+    paddingBottom: 165
   },
   speedCard: {
     backgroundColor: colors.surface,
@@ -1769,16 +1704,18 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 13
   },
-  reviewHisaabBtn: {
+  reviewSummaryBtn: {
     backgroundColor: '#1E293B',
     borderWidth: 1,
     borderColor: '#475569',
     borderRadius: 10,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginTop: 10
   },
-  reviewHisaabBtnText: {
+  reviewSummaryBtnText: {
     color: '#93C5FD',
     fontWeight: '800',
     fontSize: 12

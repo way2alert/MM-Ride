@@ -6,8 +6,10 @@ import {
   StyleSheet, 
   ScrollView, 
   Alert,
-  TouchableOpacity
+  TouchableOpacity,
+  Platform
 } from 'react-native';
+import { openOverlaySettings } from '../services/overlayService';
 import { collection, getDocs, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useDriver } from '../context/DriverContext';
@@ -176,9 +178,30 @@ export default function StartDutyScreen({ navigation }) {
         deviceId: driverProfile?.boundDeviceId || hardwareId || 'android_device_company'
       });
 
-      Alert.alert('Duty Shift Started! 🚀', 'Your shift has commenced. Live GPS monitoring is now transmitting to Operations.', [
-        { text: 'Enter Work Console', onPress: () => navigation?.replace && navigation.replace('ActiveDuty') }
-      ]);
+      if (Platform.OS === 'android') {
+        Alert.alert(
+          'Duty Shift Started! 🚀',
+          'Live GPS monitoring is now transmitting to Operations.\n\n📱 Overlay Mode: Allow "Display over other apps" so the floating 1-tap ride logger and telemetry stay active while driving on Ola / Uber / Rapido.',
+          [
+            {
+              text: 'Enable Overlay (Settings) ⚙️',
+              onPress: async () => {
+                await openOverlaySettings();
+                navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
+              }
+            },
+            {
+              text: 'Launch Shift Overlay 🚀',
+              style: 'default',
+              onPress: () => {
+                navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
+              }
+            }
+          ]
+        );
+      } else {
+        navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
+      }
     } catch (err) {
       Alert.alert('Start Duty Failed', err.message);
     } finally {
