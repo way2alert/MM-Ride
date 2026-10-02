@@ -15,6 +15,7 @@ import { useDriver } from '../context/DriverContext';
 import { submitDailyRideEarnings, getShiftRideEntries } from '../firebase/api';
 import { colors } from '../utils/colors';
 import BigButton from '../components/BigButton';
+import { buildUpiUri, getUpiQrCodeUrl, launchUpiPaymentApp, DEFAULT_COMPANY_UPI } from '../utils/upiPayment';
 
 export default function SubmitDailyEarningsScreen({ navigation }) {
   const { currentUser, driverProfile } = useDriver();
@@ -43,6 +44,10 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Dynamic UPI Payment State
+  const [upiPaymentRef, setUpiPaymentRef] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+
   // Calculations
   const oRides = parseInt(olaRides, 10) || 0;
   const oCash = parseFloat(olaCash) || 0;
@@ -68,6 +73,14 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
   const worker50 = Math.round(totalGross * 0.5);
   // Net cash settlement: Cash in hand minus worker's 50% share
   const cashDelta = totalCash - worker50;
+
+  // Dynamic UPI Intent URI & QR URL
+  const upiUri = buildUpiUri({
+    amount: cashDelta > 0 ? cashDelta : 0,
+    note: `MMRide Shift ${driverProfile?.name || currentUser?.uid || ''}`,
+    refId: `SETTLE_${date}_${currentUser?.uid?.substring(0, 5) || 'DRV'}`
+  });
+  const qrCodeUrl = getUpiQrCodeUrl(upiUri, 240);
 
   useEffect(() => {
     async function loadAutoEntries() {
@@ -224,12 +237,17 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
           total: rTotal
         } : null,
         uri: imageUri,
-        fileName: 'platform_summary.jpg'
+        fileName: 'platform_summary.jpg',
+        upiPaymentRef: upiPaymentRef.trim() || null,
+        upiPaymentStatus: upiPaymentRef.trim() ? 'PAID_PENDING_VERIFICATION' : (cashDelta <= 0 ? 'SETTLED' : 'UNPAID'),
+        upiAmountPaid: cashDelta > 0 && upiPaymentRef.trim() ? cashDelta : 0,
+        companyDueAmount: cashDelta > 0 ? cashDelta : 0,
+        driverDueAmount: cashDelta < 0 ? Math.abs(cashDelta) : 0
       });
 
       Alert.alert(
-        'Hisaab Submitted! ✅',
-        `Aaj ka hisaab submit ho gaya hai.\n\n• Total Rides: ${totalRides}\n• Gross Kamai: ₹${totalGross}\n• Aapka 50% Share: ₹${worker50}\n• Cash in Hand: ₹${totalCash}`,
+        'Shift Settlement Submitted! ✅',
+        `Your daily earnings have been submitted.\n\n• Completed Rides: ${totalRides}\n• Gross Fare: ₹${totalGross}\n• Your 50% Share: ₹${worker50}\n• Cash in Hand: ₹${totalCash}${cashDelta > 0 ? `\n• Company Due: ₹${cashDelta} ${upiPaymentRef ? '(UPI Reference Attached ✅)' : '(Pending Payment)'}` : ''}`,
         [{ text: 'OK', onPress: () => (navigation?.goBack ? navigation.goBack() : navigation?.navigate && navigation.navigate('Home')) }]
       );
     } catch (err) {
@@ -516,26 +534,76 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
             cashDelta > 0 ? styles.settlementGiveBox : styles.settlementTakeBox
           ]}>
             {cashDelta > 0 ? (
-              <>
+              <View style={styles.upiPaymentSection}>
                 <Text style={styles.settlementAlertTitle}>
-                  🔴 Depot me Jama Karna Hai: ₹{cashDelta}
+                  🔴 Company Due to Pay: ₹{cashDelta} (செலுத்த வேண்டிய தொகை)
                 </Text>
                 <Text style={styles.settlementAlertDesc}>
-                  Aapke paas cash (₹{totalCash}) zyada hai. Apna 50% share (₹{worker50}) kaat kar bacha hua ₹{cashDelta} depot me dena hai.
+                  Total Cash in hand: ₹{totalCash}. After deducting your 50% earnings (₹{worker50}), please transfer ₹{cashDelta} to MM Ride.
                 </Text>
-              </>
+
+                {/* 1-Tap Pay via UPI Intent Button */}
+                <TouchableOpacity
+                  style={styles.payUpiBtn}
+                  onPress={() => launchUpiPaymentApp(upiUri)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.payUpiBtnText}>
+                    📲 Pay ₹{cashDelta} via UPI (GPay / PhonePe / Paytm) ➔
+                  </Text>
+                </TouchableOpacity>
+
+                {/* QR Code Toggle / Display */}
+                <TouchableOpacity
+                  style={styles.showQrBtn}
+                  onPress={() => setShowQrModal(!showQrModal)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.showQrBtnText}>
+                    {showQrModal ? '▲ Hide QR Code' : '📷 Show Dynamic UPI QR Code (Scan to Pay)'}
+                  </Text>
+                </TouchableOpacity>
+
+                {showQrModal && (
+                  <View style={styles.qrCodeBox}>
+                    <Image source={{ uri: qrCodeUrl }} style={styles.qrImage} />
+                    <Text style={styles.qrVpaText}>UPI ID: {DEFAULT_COMPANY_UPI.vpa}</Text>
+                    <Text style={styles.qrSubText}>Scan using GPay, PhonePe, Paytm, or BHIM</Text>
+                  </View>
+                )}
+
+                {/* Transaction UTR Input */}
+                <View style={styles.utrInputContainer}>
+                  <Text style={styles.utrLabel}>
+                    UPI Transaction UTR / Ref Number * (12 Digits):
+                  </Text>
+                  <TextInput
+                    style={styles.utrInput}
+                    placeholder="e.g. 427189123456"
+                    placeholderTextColor="#64748B"
+                    keyboardType="number-pad"
+                    value={upiPaymentRef}
+                    onChangeText={setUpiPaymentRef}
+                  />
+                  {upiPaymentRef.length >= 10 && (
+                    <Text style={{ color: '#34D399', fontSize: 11, marginTop: 4, fontWeight: '700' }}>
+                      ✅ Payment Reference Attached
+                    </Text>
+                  )}
+                </View>
+              </View>
             ) : cashDelta < 0 ? (
-              <>
+              <View>
                 <Text style={[styles.settlementAlertTitle, { color: '#34D399' }]}>
-                  🟢 Depot se Milna Hai: ₹{Math.abs(cashDelta)}
+                  🟢 Due to Driver: ₹{Math.abs(cashDelta)} (வரவேண்டிய தொகை)
                 </Text>
                 <Text style={[styles.settlementAlertDesc, { color: '#D1FAE5' }]}>
-                  Customer ne UPI zyada kiya. Depot aapko bacha hua ₹{Math.abs(cashDelta)} UPI ya Cash me dega.
+                  Customer paid mostly Online / UPI. MM Ride will disburse remaining ₹{Math.abs(cashDelta)} to your UPI / bank account on record.
                 </Text>
-              </>
+              </View>
             ) : (
               <Text style={styles.settlementAlertTitle}>
-                ⚪ Hisaab Barabar (0 Cash Exchange)
+                ⚪ Accounts Balanced (₹0 Due)
               </Text>
             )}
           </View>
@@ -861,5 +929,86 @@ const styles = StyleSheet.create({
     color: '#F87171',
     fontSize: 11,
     fontWeight: '800'
+  },
+  upiPaymentSection: {
+    width: '100%'
+  },
+  payUpiBtn: {
+    backgroundColor: '#0284C7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4
+  },
+  payUpiBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
+    textAlign: 'center'
+  },
+  showQrBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)'
+  },
+  showQrBtnText: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  qrCodeBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 10
+  },
+  qrImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 8
+  },
+  qrVpaText: {
+    color: '#0F172A',
+    fontWeight: '900',
+    fontSize: 14,
+    marginTop: 10
+  },
+  qrSubText: {
+    color: '#64748B',
+    fontSize: 11,
+    marginTop: 2
+  },
+  utrInputContainer: {
+    marginTop: 12
+  },
+  utrLabel: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 6
+  },
+  utrInput: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+    borderWidth: 1,
+    borderColor: '#475569'
   }
 });

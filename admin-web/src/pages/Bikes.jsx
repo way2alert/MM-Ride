@@ -113,6 +113,10 @@ export default function Bikes() {
         pickupLongitude,
         status: 'AVAILABLE',
         currentOdometer: Number(newBike.currentOdometer) || 0,
+        lastServiceOdometer: Number(newBike.currentOdometer) || 0,
+        nextServiceOdometer: (Number(newBike.currentOdometer) || 0) + 2500,
+        lastServiceDate: new Date().toISOString(),
+        serviceDue: false,
         currentFuelCharge: Number(newBike.currentFuelCharge) || 100,
         insuranceNumber: newBike.insuranceNumber,
         insuranceExpiry: newBike.insuranceExpiry,
@@ -255,6 +259,46 @@ export default function Bikes() {
     }
   };
 
+  const handleMarkBikeServiced = async (b) => {
+    const curOdo = Number(b.currentOdometer) || 0;
+    const nextOdo = curOdo + 2500;
+    if (!window.confirm(`Confirm 2,500 KM Oil Change & Periodic Service for Bike ${b.registrationNumber} at ${curOdo} KM?\n\nNext oil change will be set to: ${nextOdo} KM.`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'bikes', b.id), {
+        lastServiceOdometer: curOdo,
+        nextServiceOdometer: nextOdo,
+        lastServiceDate: new Date().toISOString(),
+        serviceDue: false
+      });
+
+      await addDoc(collection(db, 'bikeMaintenanceLogs'), {
+        bikeId: b.id,
+        registrationNumber: b.registrationNumber,
+        serviceType: 'OIL_CHANGE_AND_INSPECTION',
+        odometer: curOdo,
+        nextServiceOdometer: nextOdo,
+        servicedAt: new Date().toISOString(),
+        notes: '2,500 KM Periodic engine oil replacement, chain lube & brake check.'
+      });
+
+      await logAdminAudit({
+        action: 'BIKE_SERVICED',
+        relevantRecordId: b.id,
+        notes: `Bike ${b.registrationNumber} serviced at ${curOdo} KM. Next service at ${nextOdo} KM.`
+      });
+
+      alert(`Bike ${b.registrationNumber} marked Serviced! Next oil change at ${nextOdo} KM. ✅`);
+    } catch (e) {
+      alert(`Error updating service: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const hubsMap = Object.fromEntries(hubs.map(h => [h.id, h.name]));
 
   return (
@@ -279,6 +323,7 @@ export default function Bikes() {
                 <th>Type</th>
                 <th>Stationed Hub & Pickup Location</th>
                 <th>Odometer</th>
+                <th>Service & Oil Change</th>
                 <th>Fuel/Charge</th>
                 <th>Status</th>
                 <th>Assigned Driver</th>
@@ -313,6 +358,25 @@ export default function Bikes() {
                     </div>
                   </td>
                   <td>{b.currentOdometer || 0} km</td>
+                  <td>
+                    {(() => {
+                      const cur = Number(b.currentOdometer) || 0;
+                      const next = Number(b.nextServiceOdometer) || (cur + 2500);
+                      const rem = next - cur;
+                      const isOverdue = rem <= 0;
+                      const isDueSoon = rem > 0 && rem <= 250;
+                      return (
+                        <div>
+                          <span className={`badge ${isOverdue ? 'badge-danger' : isDueSoon ? 'badge-warning' : 'badge-success'}`} style={{ fontSize: '0.72rem' }}>
+                            {isOverdue ? `🔴 OVERDUE (${Math.abs(rem)} km)` : isDueSoon ? `🟠 Due Soon (${rem} km)` : `🟢 ${rem} km left`}
+                          </span>
+                          <div style={{ fontSize: '0.7rem', color: '#94A3B8', marginTop: 3 }}>
+                            Next: {next} km
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td><b>{b.currentFuelCharge || 100}%</b></td>
                   <td>
                     <span className={`badge ${b.status === 'AVAILABLE' ? 'badge-success' :
@@ -340,6 +404,15 @@ export default function Bikes() {
                           <UserCheck size={14} /> Assign
                         </button>
                       )}
+
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ borderColor: 'rgba(56, 189, 248, 0.4)', color: '#38BDF8' }}
+                        onClick={() => handleMarkBikeServiced(b)}
+                        title="Record 2,500 KM Oil Change & Service"
+                      >
+                        <Wrench size={13} /> Service (Oil)
+                      </button>
 
                       {(b.status === 'RETURNED' || b.status === 'MAINTENANCE') && (
                         <button

@@ -292,6 +292,36 @@ export default function EarningsSettlement() {
     }
   };
 
+  const handleVerifyUpiPayment = async (sub) => {
+    const amt = sub.upiAmountPaid || sub.companyDueAmount || 0;
+    const driverName = driversMap[sub.driverId]?.fullName || 'Driver';
+    if (!window.confirm(`Verify and approve UPI payment of ₹${amt} (UTR: ${sub.upiPaymentRef}) received from ${driverName}?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'dailyEarningsSubmissions', sub.id), {
+        upiPaymentStatus: 'VERIFIED',
+        status: 'APPROVED',
+        verifiedAt: new Date().toISOString()
+      });
+
+      await logAdminAudit({
+        driverId: sub.driverId,
+        action: 'UPI_SETTLEMENT_PAYMENT_VERIFIED',
+        relevantRecordId: sub.id,
+        notes: `Admin confirmed receipt of ₹${amt} via UPI UTR: ${sub.upiPaymentRef} from ${driverName}`
+      });
+
+      alert(`UPI Payment of ₹${amt} from ${driverName} Verified! ✅`);
+    } catch (err) {
+      alert(`Error verifying UPI: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 3-Way Fuel Mileage Analysis
   const computeFuelMileage = (fuel) => {
     const duty = fuel.dutyId ? dutySessionsMap[fuel.dutyId] : null;
@@ -600,6 +630,22 @@ export default function EarningsSettlement() {
                           ₹{sub.cashRidesCollected || 0}
                         </div>
                         <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Cash Passenger Fares</div>
+                        {sub.upiPaymentRef && (
+                          <div style={{ 
+                            marginTop: 6, 
+                            background: sub.upiPaymentStatus === 'VERIFIED' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(56, 189, 248, 0.12)', 
+                            padding: '4px 6px', 
+                            borderRadius: 6, 
+                            border: `1px solid ${sub.upiPaymentStatus === 'VERIFIED' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(56, 189, 248, 0.3)'}` 
+                          }}>
+                            <div style={{ color: sub.upiPaymentStatus === 'VERIFIED' ? '#34D399' : '#38BDF8', fontSize: '0.72rem', fontWeight: 800 }}>
+                              📲 UPI Paid: ₹{sub.upiAmountPaid || sub.companyDueAmount || 0}
+                            </div>
+                            <div style={{ color: '#CBD5E1', fontSize: '0.68rem', fontFamily: 'monospace' }}>
+                              UTR: {sub.upiPaymentRef}
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td>
                         {sub.screenshotUrl ? (
@@ -614,16 +660,34 @@ export default function EarningsSettlement() {
                         <span className={`badge ${sub.status === 'APPROVED' ? 'badge-success' : 'badge-warning'}`}>
                           {sub.status === 'APPROVED' ? 'VERIFIED & SETTLED' : 'SUPPORTING EVIDENCE'}
                         </span>
+                        {sub.upiPaymentRef && (
+                          <div style={{ marginTop: 4 }}>
+                            <span className={`badge ${sub.upiPaymentStatus === 'VERIFIED' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.65rem' }}>
+                              {sub.upiPaymentStatus === 'VERIFIED' ? '✅ UPI Verified' : '⏳ UPI Pending'}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td>
-                        {sub.status === 'PENDING' && (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleVerifySubmissionAtDepot(sub)}
-                          >
-                            <Smartphone size={14} /> Verify Driver Phone & Settle
-                          </button>
-                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          {sub.upiPaymentRef && sub.upiPaymentStatus !== 'VERIFIED' && (
+                            <button
+                              className="btn btn-success btn-sm"
+                              onClick={() => handleVerifyUpiPayment(sub)}
+                              title="Confirm receipt of UPI payment in bank"
+                            >
+                              <CheckCircle size={13} /> Verify UPI (₹{sub.upiAmountPaid || sub.companyDueAmount || 0})
+                            </button>
+                          )}
+                          {sub.status === 'PENDING' && (
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleVerifySubmissionAtDepot(sub)}
+                            >
+                              <Smartphone size={13} /> Verify Phone & Settle
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

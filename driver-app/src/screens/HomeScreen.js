@@ -178,6 +178,37 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.bikeFuelBadge}>
               ⛽ Fuel Paid by MM Ride
             </Text>
+            {(() => {
+              const curOdo = Number(assignedBike?.currentOdometer) || 0;
+              const nextOdo = Number(assignedBike?.nextServiceOdometer) || (curOdo + 2500);
+              const kmRem = nextOdo - curOdo;
+              if (kmRem <= 250) {
+                return (
+                  <View style={{
+                    marginTop: 8,
+                    backgroundColor: kmRem <= 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    paddingVertical: 4,
+                    paddingHorizontal: 8,
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: kmRem <= 0 ? '#EF4444' : '#F59E0B'
+                  }}>
+                    <Text style={{
+                      color: kmRem <= 0 ? '#F87171' : '#FCD34D',
+                      fontSize: 10,
+                      fontWeight: '800'
+                    }}>
+                      {kmRem <= 0 ? `🚨 OIL OVERDUE (${Math.abs(kmRem)} km)` : `🔧 Oil Change Due in ${kmRem} km`}
+                    </Text>
+                  </View>
+                );
+              }
+              return (
+                <Text style={{ color: '#94A3B8', fontSize: 10, marginTop: 4 }}>
+                  🔧 Oil Change: {kmRem} km left
+                </Text>
+              );
+            })()}
           </View>
 
           {/* Today's Shift & Earnings Card */}

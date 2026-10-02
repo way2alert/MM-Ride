@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { colors } from '../utils/colors';
 import { logShiftRideEntry } from '../firebase/api';
+import { queueOfflineRide } from '../services/offlineQueueService';
 
 const PRESET_FARES = [30, 40, 50, 60, 80, 100, 120, 150, 200, 250];
 
@@ -129,8 +130,48 @@ export default function QuickRideLoggerModal({
         ]
       );
     } catch (err) {
-      console.error('Failed to log shift ride:', err);
-      Alert.alert('Save Error', err.message || 'Unable to save ride. Please check network.');
+      console.warn('Network write failed, saving to local offline queue:', err);
+      try {
+        const finalFare = paymentMethod === 'SPLIT' ? parsedSplitTotal : parsedFare;
+        const finalCash = paymentMethod === 'SPLIT' ? parsedSplitCash : (paymentMethod === 'CASH' ? parsedFare : 0);
+        const finalUpi = paymentMethod === 'SPLIT' ? parsedSplitUpi : (paymentMethod === 'UPI' ? parsedFare : 0);
+
+        const loggedItem = {
+          driverId,
+          dutyId: dutyId || null,
+          platform,
+          paymentMethod,
+          fare: finalFare,
+          cashAmount: finalCash,
+          upiAmount: finalUpi,
+          location: currentLocation || null,
+          timestamp: new Date().toISOString()
+        };
+
+        await queueOfflineRide(loggedItem);
+        if (onRideLogged) onRideLogged(loggedItem);
+
+        setFare('');
+        setSplitCash('');
+        setSplitUpi('');
+
+        Alert.alert(
+          'Ride Saved Offline! 📶✅',
+          `No network signal detected. Ride ₹${finalFare} saved securely on your phone.\n\nIt will automatically sync to Operations as soon as network returns.`,
+          [
+            { text: 'OK', onPress: onClose },
+            {
+              text: `Open ${platform === 'UBER' ? 'Uber' : platform === 'RAPIDO' ? 'Rapido' : 'Ola'} App 🚀`,
+              onPress: () => {
+                onClose();
+                launchDriverApp(platform);
+              }
+            }
+          ]
+        );
+      } catch (queueErr) {
+        Alert.alert('Save Error', err.message || 'Unable to save ride. Please check network.');
+      }
     } finally {
       setSaving(false);
     }

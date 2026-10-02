@@ -577,7 +577,12 @@ export async function submitDailyRideEarnings({
   rapidoDetails = null,
   blob, 
   uri, 
-  fileName 
+  fileName,
+  upiPaymentRef = null,
+  upiPaymentStatus = 'UNPAID',
+  upiAmountPaid = 0,
+  companyDueAmount = 0,
+  driverDueAmount = 0
 }) {
   let screenshotUrl = null;
   let uploadBlob = blob;
@@ -606,6 +611,11 @@ export async function submitDailyRideEarnings({
     cashRidesCollected: Number(cashRidesCollected || 0),
     screenshotUrl,
     status: 'PENDING',
+    upiPaymentRef: upiPaymentRef || null,
+    upiPaymentStatus: upiPaymentStatus || 'UNPAID',
+    upiAmountPaid: Number(upiAmountPaid) || 0,
+    companyDueAmount: Number(companyDueAmount) || 0,
+    driverDueAmount: Number(driverDueAmount) || 0,
     submittedAt: new Date().toISOString(),
     createdAt: serverTimestamp()
   };

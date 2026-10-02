@@ -24,6 +24,7 @@ import Header from '../components/Header';
 import BigButton from '../components/BigButton';
 import QuickRideLoggerModal from '../components/QuickRideLoggerModal';
 import FloatingShiftOverlayHUD from '../components/FloatingShiftOverlayHUD';
+import { syncOfflineRides } from '../services/offlineQueueService';
 
 export default function ActiveDutyScreen({ navigation, route }) {
   useKeepAwake();
@@ -118,6 +119,16 @@ export default function ActiveDutyScreen({ navigation, route }) {
       console.warn('Error setting up shiftRideEntries listener:', e);
     }
   }, [driverId, activeDutySession?.id]);
+
+  // Periodic Auto-Sync for Offline Queued Rides
+  useEffect(() => {
+    if (!driverId) return;
+    syncOfflineRides(driverId).catch(() => {});
+    const syncInterval = setInterval(() => {
+      syncOfflineRides(driverId).catch(() => {});
+    }, 45000);
+    return () => clearInterval(syncInterval);
+  }, [driverId]);
 
   const totalRidesLogged = shiftRides.length;
   const totalGrossLogged = shiftRides.reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
