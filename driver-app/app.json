@@ -60,6 +60,15 @@
       "expo-status-bar",
       "expo-audio"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/d2547b5c-f988-4cbf-9417-78a6088624c5",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "eas": {
         "projectId": "d2547b5c-f988-4cbf-9417-78a6088624c5"

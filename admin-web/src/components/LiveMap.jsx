@@ -204,14 +204,15 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
       }
     });
 
-    // Auto-fit default viewport covering ALL bikes (e.g. Manivel in New Delhi & driver in Uttam Nagar)
-    const driversHash = driversWithCoords.map(d => `${d.id}_${d.lastKnownLocation?.latitude?.toFixed(4)}_${d.lastKnownLocation?.longitude?.toFixed(4)}`).sort().join('|');
+    // Auto-fit default viewport covering ALL bikes only when fleet membership changes or on initial load
+    // Comparing driver IDs rather than coordinates prevents map from constantly resetting zoom/pan on minor GPS pings
+    const fleetIdsHash = driversWithCoords.map(d => d.id).sort().join('|');
 
     if (boundsPoints.length > 0) {
       const isInitialFit = !hasAutoCenteredRef.current;
-      const hasDriversChanged = lastDriversHashRef.current !== driversHash && driversWithCoords.length > 0;
+      const hasFleetMembershipChanged = lastDriversHashRef.current !== fleetIdsHash && driversWithCoords.length > 0;
 
-      if (isInitialFit || hasDriversChanged) {
+      if (isInitialFit || hasFleetMembershipChanged) {
         if (boundsPoints.length >= 2) {
           map.fitBounds(L.latLngBounds(boundsPoints), {
             padding: [75, 75],
@@ -222,7 +223,7 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
           map.setView(boundsPoints[0], 14, { animate: true });
         }
         hasAutoCenteredRef.current = true;
-        lastDriversHashRef.current = driversHash;
+        lastDriversHashRef.current = fleetIdsHash;
       }
     }
 
