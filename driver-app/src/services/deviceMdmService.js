@@ -27,10 +27,12 @@ let deviceSnapshotUnsub = null;
 let policySnapshotUnsub = null;
 let latestLocation = null;
 let latestSpeed = 0;
+let latestHeading = 0;
 
-export function updateMdmTelemetryLocation(loc, speed) {
+export function updateMdmTelemetryLocation(loc, speed, heading) {
   if (loc) latestLocation = loc;
   if (speed !== undefined) latestSpeed = speed;
+  if (heading !== undefined) latestHeading = heading;
 }
 
 /**
@@ -237,6 +239,7 @@ export async function startMdmDeviceTelemetry({
           latitude: activeLoc.latitude,
           longitude: activeLoc.longitude,
           speed: activeSpeed,
+          heading: latestHeading || activeLoc?.heading || 0,
           timestamp: new Date().toISOString()
         };
       }
@@ -247,13 +250,16 @@ export async function startMdmDeviceTelemetry({
       const targetDriverId = driverProfile?.id || effectiveDriverId;
       if (targetDriverId) {
         const driverSyncPayload = {
-          boundDeviceId: deviceId,
           lastDeviceSync: new Date().toISOString(),
           lastActiveAt: new Date().toISOString(),
           deviceBattery: metrics.batteryLevel,
           deviceIsCharging: metrics.isCharging,
           deviceNetwork: metrics.networkType
         };
+        // Only retain boundDeviceId if driver profile is officially bound to this hardware
+        if (driverProfile?.boundDeviceId === deviceId) {
+          driverSyncPayload.boundDeviceId = deviceId;
+        }
         if (activeLoc?.latitude && activeLoc?.longitude) {
           driverSyncPayload.lastKnownLocation = {
             latitude: activeLoc.latitude,

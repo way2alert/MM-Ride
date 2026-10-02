@@ -69,37 +69,46 @@ export default function LiveMonitoring({ onSelectDriver }) {
       (driver.mobileNumber && d.assignedDriverPhone && d.assignedDriverPhone.replace(/\D/g, '').endsWith(driver.mobileNumber.replace(/\D/g, '').slice(-10)))
     );
 
-    let effectiveLocation = driver.lastKnownLocation || null;
+    let effectiveLocation = driver.lastKnownLocation ? {
+      ...driver.lastKnownLocation,
+      heading: typeof driver.lastKnownLocation.heading === 'number' ? driver.lastKnownLocation.heading : null
+    } : null;
 
     if (dev?.lastGps?.latitude && dev?.lastGps?.longitude) {
       const devTime = dev.lastGps.timestamp ? new Date(dev.lastGps.timestamp).getTime() : 0;
       const drvTime = driver.lastKnownLocation?.timestamp ? new Date(driver.lastKnownLocation.timestamp).getTime() : 0;
       const maxSpeed = Math.max(Number(dev.lastGps.speed) || 0, Number(driver.lastKnownLocation?.speed) || 0);
+      const isDrvFresh = drvTime > 0 && (Date.now() - drvTime) < 25000;
       
-      if (!effectiveLocation || devTime >= drvTime) {
+      // If driver phone's direct GPS is active and fresh, prioritize it; otherwise use device hardware GPS
+      if (!effectiveLocation || (!isDrvFresh && devTime >= drvTime)) {
         effectiveLocation = {
           latitude: dev.lastGps.latitude,
           longitude: dev.lastGps.longitude,
           speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (dev.lastGps.speed !== undefined ? dev.lastGps.speed : (effectiveLocation?.speed || 0)),
+          heading: typeof dev.lastGps.heading === 'number' ? dev.lastGps.heading : (effectiveLocation?.heading || 0),
           timestamp: dev.lastGps.timestamp || dev.lastSync || new Date().toISOString()
         };
       } else if (effectiveLocation) {
         effectiveLocation = {
           ...effectiveLocation,
-          speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (effectiveLocation.speed || 0)
+          speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (effectiveLocation.speed || 0),
+          heading: typeof effectiveLocation.heading === 'number' ? effectiveLocation.heading : (typeof dev.lastGps.heading === 'number' ? dev.lastGps.heading : 0)
         };
       }
     }
 
-    // Dynamic Server-Side Delta Speed Calculator (Ensures moving bikes show real speed even if phone reports 0)
+    // Dynamic Server-Side Delta Speed & Trajectory Heading Calculator
     let dynamicSpeed = Number(effectiveLocation?.speed) || 0;
+    let dynamicHeading = (effectiveLocation && typeof effectiveLocation.heading === 'number') ? effectiveLocation.heading : null;
+
     if (effectiveLocation?.latitude && effectiveLocation?.longitude) {
       const prev = driverGpsHistoryRef.current.get(driver.id);
       const curTime = effectiveLocation.timestamp ? new Date(effectiveLocation.timestamp).getTime() : Date.now();
 
       if (prev && prev.latitude && prev.longitude) {
         const dtSeconds = (curTime - prev.timestamp) / 1000;
-        if (dtSeconds >= 2 && dtSeconds <= 180) {
+        if (dtSeconds >= 1 && dtSeconds <= 180) {
           const R = 6371e3;
           const phi1 = (prev.latitude * Math.PI) / 180;
           const phi2 = (effectiveLocation.latitude * Math.PI) / 180;
@@ -111,13 +120,21 @@ export default function LiveMonitoring({ onSelectDriver }) {
           const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           const distMeters = R * c;
 
-          if (distMeters >= 3) {
+          if (distMeters >= 1.5) {
             const calcSpeed = Math.round((distMeters / dtSeconds) * 3.6);
             if (calcSpeed > 0 && calcSpeed <= 120) {
               dynamicSpeed = Math.max(dynamicSpeed, calcSpeed);
             }
+            // Compute real directional heading along road
+            const y = Math.sin(deltaLambda) * Math.cos(phi2);
+            const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+            dynamicHeading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
           }
         }
+      }
+
+      if (dynamicHeading === null) {
+        dynamicHeading = prev?.recentHeading || 0;
       }
 
       if (!prev || prev.latitude !== effectiveLocation.latitude || prev.longitude !== effectiveLocation.longitude) {
@@ -125,7 +142,8 @@ export default function LiveMonitoring({ onSelectDriver }) {
           latitude: effectiveLocation.latitude,
           longitude: effectiveLocation.longitude,
           timestamp: curTime,
-          recentSpeed: dynamicSpeed
+          recentSpeed: dynamicSpeed,
+          recentHeading: dynamicHeading
         });
       } else if (prev && (curTime - prev.timestamp) > 40000) {
         dynamicSpeed = 0; // Stationary for >40s
@@ -135,7 +153,8 @@ export default function LiveMonitoring({ onSelectDriver }) {
 
       effectiveLocation = {
         ...effectiveLocation,
-        speed: dynamicSpeed
+        speed: dynamicSpeed,
+        heading: dynamicHeading !== null ? dynamicHeading : (effectiveLocation.heading || 0)
       };
     }
 

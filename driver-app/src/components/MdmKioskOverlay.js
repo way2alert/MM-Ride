@@ -14,6 +14,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { colors } from '../utils/colors';
 import { verifyAdminExitPin, clearRemoteAlarm } from '../services/deviceMdmService';
+import { playSirenSound, stopSirenSound } from '../services/sirenSoundService';
 
 export default function MdmKioskOverlay({
   restrictionState,
@@ -45,18 +46,22 @@ export default function MdmKioskOverlay({
 
   useEffect(() => {
     if (isAlarm) {
-      // Pulse emergency vibration
+      // Start native audio siren and pulse emergency vibration
+      playSirenSound().catch(() => {});
       Vibration.vibrate([0, 600, 200, 600, 200, 1000], true);
     } else {
+      stopSirenSound().catch(() => {});
       Vibration.cancel();
     }
     return () => {
+      stopSirenSound().catch(() => {});
       Vibration.cancel();
     };
   }, [isAlarm]);
 
   const handleStopAlarm = async () => {
     setAlarmDismissed(true);
+    stopSirenSound().catch(() => {});
     Vibration.cancel();
     const deviceId = restrictionState?.deviceData?.deviceId || restrictionState?.deviceData?.id;
     if (deviceId) {
@@ -140,53 +145,65 @@ export default function MdmKioskOverlay({
         animationType="fade"
       >
         <View style={styles.alarmContainer}>
-          {/* Audio Synthesizer & MP3 Streamer via WebView */}
-          <View style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}>
+          {/* Audio Synthesizer & Sound Fallback via WebView */}
+          <View style={{ width: 10, height: 10, opacity: 0.05, position: 'absolute' }}>
             <WebView
               originWhitelist={['*']}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
               mediaPlaybackRequiresUserAction={false}
               allowsInlineMediaPlayback={true}
               source={{
                 html: `
                   <!DOCTYPE html>
                   <html>
-                  <head><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+                  <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  </head>
                   <body style="background:transparent; margin:0; padding:0;">
-                    <audio id="sirenAud" autoplay loop playsinline src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
                     <script>
-                      try {
-                        var aud = document.getElementById('sirenAud');
-                        if (aud) {
-                          aud.volume = 1.0;
-                          aud.play().catch(function(){});
+                      (function() {
+                        var AudioContext = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioContext) return;
+                        var ctx = new AudioContext();
+                        
+                        function ensureAudio() {
+                          if (ctx.state === 'suspended') {
+                            ctx.resume();
+                          }
                         }
-                        var AudioCtx = window.AudioContext || window.webkitAudioContext;
-                        if (AudioCtx) {
-                          var ctx = new AudioCtx();
+
+                        // Periodic resume check
+                        setInterval(ensureAudio, 250);
+                        window.addEventListener('click', ensureAudio);
+                        window.addEventListener('touchstart', ensureAudio);
+
+                        try {
                           var osc = ctx.createOscillator();
                           var gain = ctx.createGain();
                           osc.type = 'sawtooth';
-                          gain.gain.setValueAtTime(1.0, ctx.currentTime);
+                          gain.gain.setValueAtTime(0.9, ctx.currentTime);
                           osc.connect(gain);
                           gain.connect(ctx.destination);
                           osc.start();
 
-                          var freq = 750;
+                          var freq = 700;
                           var rising = true;
                           setInterval(function() {
+                            ensureAudio();
                             if (rising) {
-                              freq += 40;
-                              if (freq >= 1350) rising = false;
+                              freq += 45;
+                              if (freq >= 1400) rising = false;
                             } else {
-                              freq -= 40;
-                              if (freq <= 720) rising = true;
+                              freq -= 45;
+                              if (freq <= 680) rising = true;
                             }
                             try {
                               osc.frequency.setValueAtTime(freq, ctx.currentTime);
                             } catch (e) {}
                           }, 25);
-                        }
-                      } catch (err) {}
+                        } catch (err) {}
+                      })();
                     </script>
                   </body>
                   </html>

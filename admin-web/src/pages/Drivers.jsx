@@ -109,6 +109,22 @@ export default function Drivers({ onSelectDriver }) {
         updates.boundDeviceModel = null;
         updates.boundAt = null;
         auditAction = 'DRIVER_DEVICE_UNBOUND';
+
+        if (driver.boundDeviceId) {
+          const devDriverRef = doc(db, 'driverDevices', driver.boundDeviceId);
+          const devRef = doc(db, 'devices', driver.boundDeviceId);
+          const unbindDevPayload = {
+            assignedDriverId: null,
+            assignedDriverName: null,
+            assignedDriverPhone: null,
+            driverId: null,
+            assignedBikeId: null,
+            dutyStatus: 'OFF_DUTY',
+            updatedAt: serverTimestamp()
+          };
+          await setDoc(devDriverRef, unbindDevPayload, { merge: true }).catch(() => {});
+          await setDoc(devRef, unbindDevPayload, { merge: true }).catch(() => {});
+        }
       }
 
       await updateDoc(driverRef, updates);

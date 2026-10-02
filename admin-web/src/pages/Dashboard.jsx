@@ -120,24 +120,30 @@ export default function Dashboard({ setTab }) {
         (driver.mobileNumber && d.assignedDriverPhone && d.assignedDriverPhone.replace(/\D/g, '').endsWith(driver.mobileNumber.replace(/\D/g, '').slice(-10)))
       );
 
-      let effectiveLocation = driver.lastKnownLocation || null;
+      let effectiveLocation = driver.lastKnownLocation ? {
+        ...driver.lastKnownLocation,
+        heading: typeof driver.lastKnownLocation.heading === 'number' ? driver.lastKnownLocation.heading : null
+      } : null;
 
       if (dev?.lastGps?.latitude && dev?.lastGps?.longitude) {
         const devTime = dev.lastGps.timestamp ? new Date(dev.lastGps.timestamp).getTime() : 0;
         const drvTime = driver.lastKnownLocation?.timestamp ? new Date(driver.lastKnownLocation.timestamp).getTime() : 0;
         const maxSpeed = Math.max(Number(dev.lastGps.speed) || 0, Number(driver.lastKnownLocation?.speed) || 0);
+        const isDrvFresh = drvTime > 0 && (Date.now() - drvTime) < 25000;
         
-        if (!effectiveLocation || devTime >= drvTime) {
+        if (!effectiveLocation || (!isDrvFresh && devTime >= drvTime)) {
           effectiveLocation = {
             latitude: dev.lastGps.latitude,
             longitude: dev.lastGps.longitude,
             speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (dev.lastGps.speed !== undefined ? dev.lastGps.speed : (effectiveLocation?.speed || 0)),
+            heading: typeof dev.lastGps.heading === 'number' ? dev.lastGps.heading : (effectiveLocation?.heading || 0),
             timestamp: dev.lastGps.timestamp || dev.lastSync || new Date().toISOString()
           };
         } else if (effectiveLocation) {
           effectiveLocation = {
             ...effectiveLocation,
-            speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (effectiveLocation.speed || 0)
+            speed: Math.abs(devTime - drvTime) < 15000 ? maxSpeed : (effectiveLocation.speed || 0),
+            heading: typeof effectiveLocation.heading === 'number' ? effectiveLocation.heading : (typeof dev.lastGps.heading === 'number' ? dev.lastGps.heading : 0)
           };
         }
       }

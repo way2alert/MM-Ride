@@ -27,20 +27,34 @@ export default function QuickRideLoggerModal({
   onRideLogged
 }) {
   const [platform, setPlatform] = useState('OLA'); // 'OLA' | 'UBER' | 'RAPIDO'
-  const [paymentMethod, setPaymentMethod] = useState('CASH'); // 'CASH' | 'UPI'
+  const [paymentMethod, setPaymentMethod] = useState('CASH'); // 'CASH' | 'UPI' | 'SPLIT'
   const [fare, setFare] = useState('');
+  const [splitCash, setSplitCash] = useState('');
+  const [splitUpi, setSplitUpi] = useState('');
   const [saving, setSaving] = useState(false);
 
   const parsedFare = parseFloat(fare) || 0;
+  const parsedSplitCash = parseFloat(splitCash) || 0;
+  const parsedSplitUpi = parseFloat(splitUpi) || 0;
+  const parsedSplitTotal = parsedSplitCash + parsedSplitUpi;
+
+  const effectiveFare = paymentMethod === 'SPLIT' ? parsedSplitTotal : parsedFare;
 
   const handlePresetSelect = (amt) => {
     setFare(String(amt));
   };
 
   const handleSave = async () => {
-    if (parsedFare <= 0) {
-      Alert.alert('Fare Required', 'Kripya ride ka fare (₹) enter karein ya preset button dabayein.');
-      return;
+    if (paymentMethod === 'SPLIT') {
+      if (parsedSplitTotal <= 0) {
+        Alert.alert('Amount Required', 'Kripya Cash aur UPI amount enter karein.');
+        return;
+      }
+    } else {
+      if (parsedFare <= 0) {
+        Alert.alert('Fare Required', 'Kripya ride ka fare (₹) enter karein ya preset button dabayein.');
+        return;
+      }
     }
 
     if (!driverId) {
@@ -50,19 +64,27 @@ export default function QuickRideLoggerModal({
 
     setSaving(true);
     try {
+      const finalFare = paymentMethod === 'SPLIT' ? parsedSplitTotal : parsedFare;
+      const finalCash = paymentMethod === 'SPLIT' ? parsedSplitCash : (paymentMethod === 'CASH' ? parsedFare : 0);
+      const finalUpi = paymentMethod === 'SPLIT' ? parsedSplitUpi : (paymentMethod === 'UPI' ? parsedFare : 0);
+
       await logShiftRideEntry({
         driverId,
         dutyId: dutyId || null,
         platform,
         paymentMethod,
-        fare: parsedFare,
+        fare: finalFare,
+        cashAmount: finalCash,
+        upiAmount: finalUpi,
         location: currentLocation || null
       });
 
       const loggedItem = {
         platform,
         paymentMethod,
-        fare: parsedFare,
+        fare: finalFare,
+        cashAmount: finalCash,
+        upiAmount: finalUpi,
         timestamp: new Date().toISOString()
       };
 
@@ -71,9 +93,16 @@ export default function QuickRideLoggerModal({
       }
 
       setFare('');
+      setSplitCash('');
+      setSplitUpi('');
+
+      const paymentSummary = paymentMethod === 'SPLIT'
+        ? `⚡ Split (💵 ₹${finalCash} + 📲 ₹${finalUpi})`
+        : (paymentMethod === 'CASH' ? '💵 Cash' : '📲 UPI');
+
       Alert.alert(
         'Ride Saved! ✅',
-        `${platform} • ${paymentMethod === 'CASH' ? '💵 Cash' : '📲 UPI'} • ₹${parsedFare}\n\nToday's hisaab me add ho gaya hai!`,
+        `${platform} • ${paymentSummary} • ₹${finalFare}\n\nToday's hisaab me add ho gaya hai!`,
         [
           {
             text: 'Stay in App',
@@ -195,13 +224,11 @@ export default function QuickRideLoggerModal({
                 onPress={() => setPaymentMethod('CASH')}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 20 }}>💵</Text>
-                <View style={{ marginLeft: 8 }}>
-                  <Text style={[styles.paymentTitle, paymentMethod === 'CASH' && styles.paymentTextCashActive]}>
-                    CASH MILA
-                  </Text>
-                  <Text style={styles.paymentSub}>Passenger ne hath me diya</Text>
-                </View>
+                <Text style={{ fontSize: 20, marginBottom: 2 }}>💵</Text>
+                <Text style={[styles.paymentTitle, paymentMethod === 'CASH' && styles.paymentTextCashActive]}>
+                  CASH
+                </Text>
+                <Text style={styles.paymentSub}>Poora Cash</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -209,76 +236,142 @@ export default function QuickRideLoggerModal({
                 onPress={() => setPaymentMethod('UPI')}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 20 }}>📲</Text>
-                <View style={{ marginLeft: 8 }}>
-                  <Text style={[styles.paymentTitle, paymentMethod === 'UPI' && styles.paymentTextUpiActive]}>
-                    UPI / ONLINE
-                  </Text>
-                  <Text style={styles.paymentSub}>App / QR me jama hua</Text>
-                </View>
+                <Text style={{ fontSize: 20, marginBottom: 2 }}>📲</Text>
+                <Text style={[styles.paymentTitle, paymentMethod === 'UPI' && styles.paymentTextUpiActive]}>
+                  UPI
+                </Text>
+                <Text style={styles.paymentSub}>Poora Online</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.paymentCard, paymentMethod === 'SPLIT' && styles.paymentCardSplitActive]}
+                onPress={() => setPaymentMethod('SPLIT')}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 20, marginBottom: 2 }}>⚡</Text>
+                <Text style={[styles.paymentTitle, paymentMethod === 'SPLIT' && styles.paymentTextSplitActive]}>
+                  SPLIT
+                </Text>
+                <Text style={styles.paymentSub}>Cash + UPI</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Step 3: Fare Amount */}
-            <Text style={styles.sectionLabel}>3. FARE AMOUNT (Total Kiraya ₹)</Text>
-            
-            {/* Quick Fare Chips */}
-            <View style={styles.chipsWrap}>
-              {PRESET_FARES.map((amt) => {
-                const isSelected = parsedFare === amt;
-                return (
-                  <TouchableOpacity
-                    key={amt}
-                    style={[styles.fareChip, isSelected && styles.fareChipActive]}
-                    onPress={() => handlePresetSelect(amt)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.fareChipText, isSelected && styles.fareChipTextActive]}>
-                      ₹{amt}
+            {/* Step 3: Fare Amount / Split Inputs */}
+            {paymentMethod === 'SPLIT' ? (
+              <View style={styles.splitSection}>
+                <Text style={styles.sectionLabel}>3. SPLIT AMOUNT (Cash aur UPI dono daalein)</Text>
+
+                {/* Cash Input */}
+                <View style={styles.splitInputBox}>
+                  <Text style={styles.splitInputTitleCash}>💵 Cash Amount (Hath me mila)</Text>
+                  <View style={[styles.inputContainer, styles.inputContainerCash]}>
+                    <Text style={[styles.currencySymbol, { color: '#10B981' }]}>₹</Text>
+                    <TextInput
+                      style={styles.fareInput}
+                      placeholder="Cash amount (e.g. 50)"
+                      placeholderTextColor="#64748B"
+                      keyboardType="numeric"
+                      value={splitCash}
+                      onChangeText={setSplitCash}
+                    />
+                  </View>
+                </View>
+
+                {/* UPI Input */}
+                <View style={styles.splitInputBox}>
+                  <Text style={styles.splitInputTitleUpi}>📲 UPI Amount (Online / QR mila)</Text>
+                  <View style={[styles.inputContainer, styles.inputContainerUpi]}>
+                    <Text style={[styles.currencySymbol, { color: '#60A5FA' }]}>₹</Text>
+                    <TextInput
+                      style={styles.fareInput}
+                      placeholder="UPI amount (e.g. 100)"
+                      placeholderTextColor="#64748B"
+                      keyboardType="numeric"
+                      value={splitUpi}
+                      onChangeText={setSplitUpi}
+                    />
+                  </View>
+                </View>
+
+                {/* Total Breakdown Banner */}
+                <View style={styles.splitTotalBanner}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.splitTotalLabel}>TOTAL KIRAYA (FARE):</Text>
+                    <Text style={styles.splitTotalValue}>₹{parsedSplitTotal}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                    <Text style={{ color: '#34D399', fontSize: 12, fontWeight: '700' }}>
+                      💵 Cash: ₹{parsedSplitCash}
                     </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    <Text style={{ color: '#60A5FA', fontSize: 12, fontWeight: '700' }}>
+                      📲 UPI: ₹{parsedSplitUpi}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.sectionLabel}>3. FARE AMOUNT (Total Kiraya ₹)</Text>
+                
+                {/* Quick Fare Chips */}
+                <View style={styles.chipsWrap}>
+                  {PRESET_FARES.map((amt) => {
+                    const isSelected = parsedFare === amt;
+                    return (
+                      <TouchableOpacity
+                        key={amt}
+                        style={[styles.fareChip, isSelected && styles.fareChipActive]}
+                        onPress={() => handlePresetSelect(amt)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.fareChipText, isSelected && styles.fareChipTextActive]}>
+                          ₹{amt}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-            {/* Custom Amount Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.currencySymbol}>₹</Text>
-              <TextInput
-                style={styles.fareInput}
-                placeholder="Ya yahan amount daalein (e.g. 145)"
-                placeholderTextColor="#64748B"
-                keyboardType="numeric"
-                value={fare}
-                onChangeText={setFare}
-              />
-            </View>
+                {/* Custom Amount Input */}
+                <View style={styles.inputContainer}>
+                  <Text style={styles.currencySymbol}>₹</Text>
+                  <TextInput
+                    style={styles.fareInput}
+                    placeholder="Ya yahan amount daalein (e.g. 145)"
+                    placeholderTextColor="#64748B"
+                    keyboardType="numeric"
+                    value={fare}
+                    onChangeText={setFare}
+                  />
+                </View>
 
-            {/* Real-time Confirmation Badge */}
-            {parsedFare > 0 && (
-              <View style={styles.summaryPill}>
-                <Text style={styles.summaryPillText}>
-                  Logging: <Text style={{ color: '#F8FAFC', fontWeight: '900' }}>{platform}</Text> •{' '}
-                  <Text style={{ color: paymentMethod === 'CASH' ? '#34D399' : '#60A5FA', fontWeight: '900' }}>
-                    {paymentMethod === 'CASH' ? 'Cash' : 'UPI Online'}
-                  </Text>{' '}
-                  • <Text style={{ color: '#FCD34D', fontWeight: '900' }}>₹{parsedFare}</Text>
-                </Text>
+                {/* Real-time Confirmation Badge */}
+                {parsedFare > 0 && (
+                  <View style={styles.summaryPill}>
+                    <Text style={styles.summaryPillText}>
+                      Logging: <Text style={{ color: '#F8FAFC', fontWeight: '900' }}>{platform}</Text> •{' '}
+                      <Text style={{ color: paymentMethod === 'CASH' ? '#34D399' : '#60A5FA', fontWeight: '900' }}>
+                        {paymentMethod === 'CASH' ? 'Cash' : 'UPI Online'}
+                      </Text>{' '}
+                      • <Text style={{ color: '#FCD34D', fontWeight: '900' }}>₹{parsedFare}</Text>
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
 
             {/* Save Button */}
             <TouchableOpacity
-              style={[styles.saveBtn, parsedFare <= 0 && styles.saveBtnDisabled]}
+              style={[styles.saveBtn, effectiveFare <= 0 && styles.saveBtnDisabled]}
               onPress={handleSave}
-              disabled={saving || parsedFare <= 0}
+              disabled={saving || effectiveFare <= 0}
               activeOpacity={0.8}
             >
               {saving ? (
                 <ActivityIndicator color="#0F172A" />
               ) : (
                 <Text style={styles.saveBtnText}>
-                  ⚡ SAVE RIDE (₹{parsedFare > 0 ? parsedFare : '0'})
+                  ⚡ SAVE {paymentMethod === 'SPLIT' ? 'SPLIT ' : ''}RIDE (₹{effectiveFare > 0 ? effectiveFare : '0'})
                 </Text>
               )}
             </TouchableOpacity>
@@ -438,11 +531,12 @@ const styles = StyleSheet.create({
   },
   paymentCard: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#1E293B',
     borderRadius: 12,
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderWidth: 1.5,
     borderColor: '#334155'
   },
@@ -454,10 +548,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59, 130, 246, 0.15)',
     borderColor: '#3B82F6'
   },
+  paymentCardSplitActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    borderColor: '#F59E0B'
+  },
   paymentTitle: {
     color: '#94A3B8',
     fontWeight: '800',
-    fontSize: 13
+    fontSize: 12,
+    marginTop: 2
   },
   paymentTextCashActive: {
     color: '#34D399'
@@ -465,10 +564,62 @@ const styles = StyleSheet.create({
   paymentTextUpiActive: {
     color: '#60A5FA'
   },
+  paymentTextSplitActive: {
+    color: '#FCD34D'
+  },
   paymentSub: {
     color: '#64748B',
-    fontSize: 10,
-    marginTop: 2
+    fontSize: 9,
+    marginTop: 2,
+    textAlign: 'center'
+  },
+  splitSection: {
+    marginBottom: 6
+  },
+  splitInputBox: {
+    marginBottom: 10
+  },
+  splitInputTitleCash: {
+    color: '#34D399',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+    letterSpacing: 0.3
+  },
+  splitInputTitleUpi: {
+    color: '#60A5FA',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 6,
+    letterSpacing: 0.3
+  },
+  inputContainerCash: {
+    borderColor: 'rgba(16, 185, 129, 0.5)',
+    marginBottom: 0
+  },
+  inputContainerUpi: {
+    borderColor: 'rgba(59, 130, 246, 0.5)',
+    marginBottom: 0
+  },
+  splitTotalBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 6,
+    marginBottom: 12
+  },
+  splitTotalLabel: {
+    color: '#FCD34D',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5
+  },
+  splitTotalValue: {
+    color: '#FCD34D',
+    fontSize: 20,
+    fontWeight: '900'
   },
   chipsWrap: {
     flexDirection: 'row',

@@ -114,8 +114,14 @@ export default function ActiveDutyScreen({ navigation }) {
 
   const totalRidesLogged = shiftRides.length;
   const totalGrossLogged = shiftRides.reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
-  const totalCashLogged = shiftRides.filter(r => r.paymentMethod === 'CASH').reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
-  const totalUpiLogged = shiftRides.filter(r => r.paymentMethod !== 'CASH').reduce((sum, r) => sum + (Number(r.fare) || 0), 0);
+  const totalCashLogged = shiftRides.reduce((sum, r) => {
+    if (r.cashAmount !== undefined && r.cashAmount !== null) return sum + (Number(r.cashAmount) || 0);
+    return sum + (r.paymentMethod === 'CASH' ? (Number(r.fare) || 0) : 0);
+  }, 0);
+  const totalUpiLogged = shiftRides.reduce((sum, r) => {
+    if (r.upiAmount !== undefined && r.upiAmount !== null) return sum + (Number(r.upiAmount) || 0);
+    return sum + (r.paymentMethod !== 'CASH' ? (Number(r.fare) || 0) : 0);
+  }, 0);
   const driverEstShare = Math.round(totalGrossLogged * 0.5);
 
   // Test Ride Movement Telemetry (Simulation mode ONLY - never overwrites real GPS)

@@ -92,20 +92,25 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
           relevant.forEach(item => {
             const p = (item.platform || 'OLA').toUpperCase();
             const fare = Number(item.fare) || 0;
-            const isCash = item.paymentMethod === 'CASH';
+            const cashPart = item.cashAmount !== undefined && item.cashAmount !== null
+              ? (Number(item.cashAmount) || 0)
+              : (item.paymentMethod === 'CASH' ? fare : 0);
+            const upiPart = item.upiAmount !== undefined && item.upiAmount !== null
+              ? (Number(item.upiAmount) || 0)
+              : (item.paymentMethod !== 'CASH' ? fare : 0);
 
             if (p === 'OLA') {
               oR += 1;
-              if (isCash) oC += fare;
-              else oU += fare;
+              oC += cashPart;
+              oU += upiPart;
             } else if (p === 'UBER') {
               uR += 1;
-              if (isCash) uC += fare;
-              else uU += fare;
+              uC += cashPart;
+              uU += upiPart;
             } else if (p === 'RAPIDO') {
               rR += 1;
-              if (isCash) rC += fare;
-              else rU += fare;
+              rC += cashPart;
+              rU += upiPart;
             }
           });
 

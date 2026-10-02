@@ -307,8 +307,17 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         resource.data.driverId == request.auth.uid || isAdmin()
       );
-      allow create, update: if isFinance() || isOperations();
-      allow delete: if false; // Append-only company expense ledger
+      allow create: if isAuthenticated() && (
+        request.resource.data.driverId == request.auth.uid ||
+        isFinance() ||
+        isOperations()
+      );
+      allow update: if isFinance() || isOperations() || (
+        isAuthenticated() &&
+        resource.data.driverId == request.auth.uid &&
+        resource.data.status == 'PENDING_APPROVAL'
+      );
+      allow delete: if isAdmin();
     }
 
     // Leave Requests

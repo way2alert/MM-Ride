@@ -707,8 +707,9 @@ h1, h2, h3, h4, h5, h6 {
   height: 100%;
   pointer-events: auto;
   cursor: pointer;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.55));
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  user-select: none;
 }
 
 .driver-marker-container:hover {
@@ -716,7 +717,7 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 9999 !important;
 }
 
-/* Floating Driver Name Pill on Top of Bike */
+/* Floating Driver Name Pill on Top of Bike (Always Stays Horizontal & Legible) */
 .driver-name-pill {
   background: rgba(15, 23, 42, 0.94);
   backdrop-filter: blur(8px);
@@ -732,8 +733,10 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.2px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
   border: 1.5px solid rgba(255, 255, 255, 0.2);
-  margin-bottom: 3px;
-  max-width: 180px;
+  margin-bottom: 2px;
+  max-width: 190px;
+  pointer-events: none;
+  transition: all 0.2s ease;
 }
 
 .driver-name-pill.pill-moving {
@@ -786,61 +789,114 @@ h1, h2, h3, h4, h5, h6 {
 
 .driver-pill-speed {
   font-size: 10px;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.18);
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.2);
   padding: 1px 6px;
   border-radius: 8px;
   color: #FFF;
   letter-spacing: 0.2px;
+  font-variant-numeric: tabular-nums;
 }
 
-.bike-avatar-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2.5px solid #FFFFFF;
+/* Directional Motorcycle Rotator Container */
+.bike-rotator-wrapper {
+  position: relative;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  color: #FFF;
-  box-shadow: 0 0 16px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s ease;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* Headlight Light Cone Beam projecting forward along vehicle travel vector */
+.headlight-cone {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 28px;
+  background: radial-gradient(ellipse at bottom, rgba(253, 224, 71, 0.6) 0%, rgba(253, 224, 71, 0.2) 60%, rgba(253, 224, 71, 0) 100%);
+  clip-path: polygon(35% 100%, 65% 100%, 100% 0%, 0% 0%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.bike-rotator-wrapper.is-moving .headlight-cone {
+  opacity: 1;
+}
+
+/* Directional Motorcycle Avatar */
+.bike-avatar-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 2px solid #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  position: relative;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  z-index: 2;
 }
 
 .bike-avatar-circle.bike-moving {
-  background: #10B981;
-  animation: moving-pulse 2s infinite;
+  background: #059669;
+  border-color: #6EE7B7;
 }
 
 .bike-avatar-circle.bike-overspeed {
-  background: #EF4444;
+  background: #DC2626;
+  border-color: #FCA5A5;
   animation: overspeed-flash 0.8s infinite alternate;
 }
 
 .bike-avatar-circle.bike-idle {
-  background: #F59E0B;
+  background: #D97706;
+  border-color: #FDE68A;
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.65);
 }
 
-.bike-marker-pointer {
-  width: 0;
-  height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid #FFFFFF;
-  margin-top: -1px;
+.directional-bike-svg {
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 
-@keyframes moving-pulse {
+.bike-pulse-ring {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(16, 185, 129, 0.6);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bike-moving .bike-pulse-ring {
+  animation: vehicle-pulse 2s infinite ease-out;
+}
+
+.bike-overspeed .bike-pulse-ring {
+  border-color: rgba(239, 68, 68, 0.8);
+  animation: vehicle-pulse 0.9s infinite ease-out;
+}
+
+@keyframes vehicle-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.8);
-  }
-  70% {
-    box-shadow: 0 0 0 14px rgba(16, 185, 129, 0);
+    transform: scale(0.85);
+    opacity: 0.9;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    transform: scale(1.6);
+    opacity: 0;
   }
 }
 

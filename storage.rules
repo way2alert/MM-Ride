@@ -22,6 +22,12 @@ service firebase.storage {
       allow write: if isDriver(driverId) || isAuthenticated();
     }
 
+    // Fuel fill proof photos (Dispenser, Odometer, Receipt)
+    match /fuel_proofs/{driverId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isDriver(driverId) || isAuthenticated();
+    }
+
     // Bike handover and return inspection photos
     match /handover_photos/{allPaths=**} {
       allow read: if isAuthenticated();

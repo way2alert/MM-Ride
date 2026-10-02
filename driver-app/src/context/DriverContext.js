@@ -32,6 +32,7 @@ export function DriverProvider({ children }) {
   const [profileLoading, setProfileLoading] = useState(true);
   const lastDriverSyncRef = useRef(0);
   const lastCoordsRef = useRef(null);
+  const lastHeadingRef = useRef(0);
   const lastBreadcrumbRef = useRef(0);
 
   // MDM Dedicated Device & Kiosk State
@@ -102,7 +103,12 @@ export function DriverProvider({ children }) {
       setProfileLoading(false);
       if (snap.exists()) {
         const data = { id: snap.id, ...snap.data() };
-        setDriverProfile(data);
+        // Handle remote unbind or forced sign-out triggered by admin
+        if (data.forceSignOut === true) {
+          stopMdmDeviceTelemetry();
+          await signOut(auth).catch(() => {});
+          return;
+        }
 
         // Fetch assigned bike details if assigned
         if (data.assignedBikeId) {
@@ -199,23 +205,29 @@ export function DriverProvider({ children }) {
         locationSubscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation || Location.Accuracy.High,
-            timeInterval: 2000,
-            distanceInterval: 1
+            timeInterval: 1000,
+            distanceInterval: 0.5
           },
           (loc) => {
             const coords = {
               latitude: loc.coords.latitude,
               longitude: loc.coords.longitude,
-              accuracy: loc.coords.accuracy
+              accuracy: loc.coords.accuracy,
+              altitude: loc.coords.altitude || null
             };
 
-            // Calculate real-world speed (falls back to Haversine delta distance if Android OS speed is 0/null)
+            // Calculate real-world speed and accurate bearing/heading
             let speedKmh = 0;
             const nativeSpeed = (loc.coords.speed !== null && loc.coords.speed !== undefined && loc.coords.speed >= 0)
               ? Math.round(loc.coords.speed * 3.6)
               : null;
+            const nativeHeading = (loc.coords.heading !== null && loc.coords.heading !== undefined && loc.coords.heading >= 0)
+              ? Math.round(loc.coords.heading)
+              : null;
 
             const now = Date.now();
+            let calculatedHeading = null;
+
             if (lastCoordsRef.current && lastCoordsRef.current.timestamp) {
               const dtSeconds = (now - lastCoordsRef.current.timestamp) / 1000;
               if (dtSeconds > 0 && dtSeconds < 30) {
@@ -230,9 +242,15 @@ export function DriverProvider({ children }) {
                 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
                 const distMeters = R * c;
 
-                if (distMeters >= 2) {
+                if (distMeters >= 1.5) {
                   const calculatedSpeed = Math.round((distMeters / dtSeconds) * 3.6);
                   speedKmh = nativeSpeed !== null && nativeSpeed > 0 ? Math.max(nativeSpeed, calculatedSpeed) : calculatedSpeed;
+
+                  // High-accuracy trajectory heading from road delta
+                  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+                  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+                  calculatedHeading = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+                  lastHeadingRef.current = calculatedHeading;
                 } else {
                   speedKmh = nativeSpeed !== null ? nativeSpeed : 0;
                 }
@@ -241,21 +259,29 @@ export function DriverProvider({ children }) {
               speedKmh = nativeSpeed !== null ? nativeSpeed : 0;
             }
 
+            const effectiveHeading = (nativeHeading !== null && nativeHeading > 0)
+              ? nativeHeading
+              : (calculatedHeading !== null ? calculatedHeading : (lastHeadingRef.current || 0));
+
             lastCoordsRef.current = { latitude: coords.latitude, longitude: coords.longitude, timestamp: now };
 
-            setCurrentLocation(coords);
+            setCurrentLocation({ ...coords, heading: effectiveHeading });
             setCurrentSpeed(speedKmh);
-            updateMdmTelemetryLocation(coords, speedKmh);
+            updateMdmTelemetryLocation({ ...coords, heading: effectiveHeading }, speedKmh, effectiveHeading);
 
-            // Real-time live GPS telemetry sync to driver document (throttled to every 3s)
+            // Adaptive Real-time live GPS telemetry sync to driver document
+            // Moving bikes sync every 1500ms for continuous inch-by-inch tracking; idle bikes sync every 4000ms
             if (driverProfile?.id && coords?.latitude && coords?.longitude) {
-              if (now - lastDriverSyncRef.current >= 3000) {
+              const isMoving = speedKmh > 2;
+              const syncInterval = isMoving ? 1500 : 4000;
+              if (now - lastDriverSyncRef.current >= syncInterval) {
                 lastDriverSyncRef.current = now;
                 updateDoc(doc(db, 'drivers', driverProfile.id), {
                   lastKnownLocation: {
                     latitude: coords.latitude,
                     longitude: coords.longitude,
                     speed: speedKmh,
+                    heading: effectiveHeading,
                     accuracy: coords.accuracy || null,
                     timestamp: new Date().toISOString()
                   },

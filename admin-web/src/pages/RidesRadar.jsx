@@ -72,8 +72,14 @@ export default function RidesRadar({ onSelectDriver }) {
 
   // In-shift logged rides stats
   const totalShiftFare = shiftRides.reduce((acc, r) => acc + (Number(r.fare) || 0), 0);
-  const totalShiftCash = shiftRides.filter(r => r.paymentMethod === 'CASH').reduce((acc, r) => acc + (Number(r.fare) || 0), 0);
-  const totalShiftUpi = shiftRides.filter(r => r.paymentMethod !== 'CASH').reduce((acc, r) => acc + (Number(r.fare) || 0), 0);
+  const totalShiftCash = shiftRides.reduce((acc, r) => {
+    if (r.cashAmount !== undefined && r.cashAmount !== null) return acc + (Number(r.cashAmount) || 0);
+    return acc + (r.paymentMethod === 'CASH' ? (Number(r.fare) || 0) : 0);
+  }, 0);
+  const totalShiftUpi = shiftRides.reduce((acc, r) => {
+    if (r.upiAmount !== undefined && r.upiAmount !== null) return acc + (Number(r.upiAmount) || 0);
+    return acc + (r.paymentMethod !== 'CASH' ? (Number(r.fare) || 0) : 0);
+  }, 0);
 
   // Filter by Date helper
   const isToday = (isoDate) => {
@@ -597,9 +603,15 @@ export default function RidesRadar({ onSelectDriver }) {
                           <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#10B981' }}>
                             ₹{item.fare || 0}
                           </div>
-                          <span className="badge badge-neutral" style={{ fontSize: '0.68rem', marginTop: 2 }}>
-                            {item.paymentMethod === 'CASH' ? '💵 Cash Received' : '📲 UPI Digital'}
-                          </span>
+                          {item.paymentMethod === 'SPLIT' ? (
+                            <span className="badge badge-warning" style={{ fontSize: '0.68rem', marginTop: 2, background: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', border: '1px solid #F59E0B' }}>
+                              ⚡ Split (💵 ₹{item.cashAmount || 0} + 📲 ₹{item.upiAmount || 0})
+                            </span>
+                          ) : (
+                            <span className="badge badge-neutral" style={{ fontSize: '0.68rem', marginTop: 2 }}>
+                              {item.paymentMethod === 'CASH' ? '💵 Cash Received' : '📲 UPI Digital'}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <div>
@@ -762,7 +774,13 @@ export default function RidesRadar({ onSelectDriver }) {
               {inspectModal.fare !== undefined && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                   <span style={{ color: '#94A3B8' }}>Fare:</span>
-                  <b style={{ color: '#10B981' }}>₹{inspectModal.fare} ({inspectModal.paymentMethod})</b>
+                  {inspectModal.paymentMethod === 'SPLIT' ? (
+                    <b style={{ color: '#FCD34D' }}>
+                      ₹{inspectModal.fare} (⚡ Split: 💵 ₹{inspectModal.cashAmount || 0} + 📲 ₹{inspectModal.upiAmount || 0})
+                    </b>
+                  ) : (
+                    <b style={{ color: '#10B981' }}>₹{inspectModal.fare} ({inspectModal.paymentMethod})</b>
+                  )}
                 </div>
               )}
             </div>

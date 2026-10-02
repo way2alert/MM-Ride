@@ -626,19 +626,37 @@ export async function logShiftRideEntry({
   driverId,
   dutyId,
   platform = 'OLA',
-  paymentMethod = 'CASH',
+  paymentMethod = 'CASH', // 'CASH' | 'UPI' | 'SPLIT'
   fare,
+  cashAmount,
+  upiAmount,
   location
 }) {
   const fareNum = Number(fare) || 0;
-  const isCash = paymentMethod === 'CASH';
+  let finalCash = 0;
+  let finalUpi = 0;
+
+  if (paymentMethod === 'SPLIT') {
+    finalCash = Math.max(0, Number(cashAmount) || 0);
+    finalUpi = Math.max(0, Number(upiAmount) || 0);
+  } else if (paymentMethod === 'CASH') {
+    finalCash = fareNum;
+    finalUpi = 0;
+  } else {
+    finalCash = 0;
+    finalUpi = fareNum;
+  }
+
+  const effectiveTotal = (finalCash + finalUpi) > 0 ? (finalCash + finalUpi) : fareNum;
 
   const entryRef = await addDoc(collection(db, 'shiftRideEntries'), {
     driverId,
     dutyId: dutyId || null,
     platform: platform.toUpperCase(),
-    paymentMethod: isCash ? 'CASH' : 'UPI',
-    fare: fareNum,
+    paymentMethod,
+    fare: effectiveTotal,
+    cashAmount: finalCash,
+    upiAmount: finalUpi,
     location: location || null,
     timestamp: new Date().toISOString(),
     createdAt: serverTimestamp()
@@ -650,13 +668,14 @@ export async function logShiftRideEntry({
       const dutyRef = doc(db, 'dutySessions', dutyId);
       const updates = {
         totalRidesLogged: increment(1),
-        grossEarningsLogged: increment(fareNum),
+        grossEarningsLogged: increment(effectiveTotal),
         lastRideLoggedAt: new Date().toISOString()
       };
-      if (isCash) {
-        updates.cashEarningsLogged = increment(fareNum);
-      } else {
-        updates.upiEarningsLogged = increment(fareNum);
+      if (finalCash > 0) {
+        updates.cashEarningsLogged = increment(finalCash);
+      }
+      if (finalUpi > 0) {
+        updates.upiEarningsLogged = increment(finalUpi);
       }
       await updateDoc(dutyRef, updates);
     } catch (e) {
