@@ -181,10 +181,20 @@ export default function RegistrationScreen({ navigation }) {
         permanentAddress: trimmedAddress
       });
 
-      Alert.alert('Details Saved!', 'Profile registered successfully. Now take live camera photos of your Driving Licence and Selfie.');
-      if (navigation?.navigate) {
-        navigation.navigate('DocumentUpload');
-      }
+      Alert.alert(
+        'Registration Details Saved! 📋',
+        'Please verify and enable all fleet permissions (Location "Allow all the time", Overlay & Camera) to proceed with your application.',
+        [
+          {
+            text: 'Configure Permissions ➔',
+            onPress: () => {
+              if (navigation?.navigate) {
+                navigation.navigate('PermissionsSetup', { nextScreen: 'DocumentUpload' });
+              }
+            }
+          }
+        ]
+      );
     } catch (err) {
       Alert.alert('Registration Error', err.message);
     } finally {

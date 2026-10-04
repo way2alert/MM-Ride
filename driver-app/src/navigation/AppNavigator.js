@@ -21,6 +21,7 @@ import IncidentReportScreen from '../screens/IncidentReportScreen';
 import EmergencySOSScreen from '../screens/EmergencySOSScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SuspendedScreen from '../screens/SuspendedScreen';
+import PermissionsSetupScreen from '../screens/PermissionsSetupScreen';
 
 export default function AppNavigator() {
   const { currentUser, driverProfile, activeDutySession, loading } = useDriver();
@@ -53,8 +54,31 @@ export default function AppNavigator() {
     return <SuspendedScreen />;
   }
 
+  // Explicitly navigated to Permissions Setup (Mandatory Onboarding & Preflight Gate)
+  if (currentScreen === 'PermissionsSetup') {
+    return (
+      <PermissionsSetupScreen
+        navigation={{
+          navigate: (screen, params) => {
+            setNavParams(params || {});
+            setCurrentScreen(screen);
+          },
+          replace: (screen, params) => {
+            setNavParams(params || {});
+            setCurrentScreen(screen);
+          }
+        }}
+        nextScreen={navParams?.nextScreen || 'DocumentUpload'}
+      />
+    );
+  }
+
   // Profile submitted or explicitly navigated to Document Upload
-  if (currentScreen === 'DocumentUpload' || driverProfile?.accountStatus === 'DOCUMENTS_SUBMITTED') {
+  if (
+    currentScreen === 'DocumentUpload' ||
+    driverProfile?.accountStatus === 'DOCUMENT_UPLOAD_PENDING' ||
+    driverProfile?.accountStatus === 'DOCUMENTS_SUBMITTED'
+  ) {
     return (
       <DocumentUploadScreen
         navigation={{
@@ -145,6 +169,8 @@ export default function AppNavigator() {
       return <VerificationStatusScreen navigation={navigation} />;
     case 'DocumentUpload':
       return <DocumentUploadScreen navigation={navigation} />;
+    case 'PermissionsSetup':
+      return <PermissionsSetupScreen navigation={navigation} nextScreen={navParams?.nextScreen} />;
     case 'Home':
     default:
       return <HomeScreen navigation={navigation} />;

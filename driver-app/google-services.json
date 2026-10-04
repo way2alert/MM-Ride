@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1028952364672",
+    "project_id": "mm-ride-6899f",
+    "storage_bucket": "mm-ride-6899f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1028952364672:android:f08ce1546f80fa8d803865",
+        "android_client_info": {
+          "package_name": "com.mmride.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyANFfdUUQt5sl9tB0lyBlYxbOMwRuQQSi4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

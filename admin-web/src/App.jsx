@@ -13,6 +13,7 @@ import Hubs from './pages/Hubs';
 import LiveMonitoring from './pages/LiveMonitoring';
 import DutySessions from './pages/DutySessions';
 import EarningsSettlement from './pages/EarningsSettlement';
+import DailyProfitLoss from './pages/DailyProfitLoss';
 import LeaveRequests from './pages/LeaveRequests';
 import Incidents from './pages/Incidents';
 import Reports from './pages/Reports';
@@ -57,6 +58,7 @@ export default function App() {
     'devices': { title: 'Dedicated Device Fleet & MDM Control', subtitle: 'Android Enterprise QR enrollment, dedicated kiosk mode, battery health, and remote anti-theft lockdown' },
     'hubs': { title: 'Authorized Hubs & Depots', subtitle: 'Authorized shift pickup/return depots with geofence radii' },
     'duty-sessions': { title: 'Duty Shifts & Breaks', subtitle: 'Active duty hours, 12h compliance, and distance telemetry' },
+    'profit-loss': { title: 'Daily Profit & Loss Ledger', subtitle: 'Live unit economics, revenue splits, fuel expenditures, and net owner margins' },
     'settlements': { title: 'Earnings & Daily Settlements', subtitle: '50/50 net splits, 10% reserve holds, and verified payouts' },
     'leave': { title: 'Driver Leave Management', subtitle: 'Scheduled leaves and weekly off approvals' },
     'incidents': { title: 'Incidents & Accidents', subtitle: 'Emergency SOS logs, damage reports, and traffic challans' },
@@ -118,6 +120,7 @@ export default function App() {
       )}
       {currentTab === 'hubs' && <Hubs />}
       {currentTab === 'duty-sessions' && <DutySessions />}
+      {currentTab === 'profit-loss' && <DailyProfitLoss />}
       {currentTab === 'settlements' && <EarningsSettlement />}
       {currentTab === 'leave' && <LeaveRequests />}
       {currentTab === 'incidents' && <Incidents />}

@@ -11,7 +11,7 @@ import {
   Bike, 
   FileText 
 } from 'lucide-react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
 import { DRIVER_STATES, getDriverEffectiveStatus, matchesLifecycleState } from '../utils/constants';
@@ -50,6 +50,12 @@ export default function Drivers({ onSelectDriver }) {
       let auditAction = '';
 
       if (type === 'APPROVE') {
+        if (driver.verificationStatus !== 'DOCUMENTS_VERIFIED') {
+          alert('Cannot approve driver! KYC documents have not been verified yet. Please review and verify their documents in the Document Verification Queue first.');
+          setLoading(false);
+          setActionModal({ isOpen: false, type: '', driver: null, reason: '' });
+          return;
+        }
         updates.approvalStatus = 'APPROVED';
         updates.accountStatus = driver.assignedBikeId ? 'BIKE_ASSIGNED' : 'APPROVED_BIKE_NOT_ASSIGNED';
         updates.approvedAt = new Date().toISOString();
@@ -132,9 +138,9 @@ export default function Drivers({ onSelectDriver }) {
       await logAdminAudit({
         driverId: driver.id,
         action: auditAction,
-        previousValue: driver.accountStatus,
-        newValue: updates.accountStatus,
-        notes: reason || `Driver status updated to ${updates.accountStatus}`
+        previousValue: driver.accountStatus || 'N/A',
+        newValue: updates.accountStatus || driver.accountStatus || 'DEVICE_RESET',
+        notes: reason || `Driver action performed: ${auditAction}`
       });
 
       setActionModal({ isOpen: false, type: '', driver: null, reason: '' });

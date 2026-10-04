@@ -5,9 +5,11 @@ import { DriverProvider } from './src/context/DriverContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { colors } from './src/utils/colors';
 import { initBackgroundUpdates } from './src/services/updateService';
+import { initCrashReporting } from './src/services/crashService';
 
 export default function App() {
   useEffect(() => {
+    initCrashReporting();
     const cleanup = initBackgroundUpdates();
     return () => cleanup && cleanup();
   }, []);

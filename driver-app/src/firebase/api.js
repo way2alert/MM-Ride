@@ -36,7 +36,7 @@ export async function registerDriverProfile(driverId, data) {
     ...data,
     verificationStatus: 'PENDING',
     approvalStatus: 'PENDING',
-    accountStatus: 'DOCUMENTS_SUBMITTED',
+    accountStatus: 'DOCUMENT_UPLOAD_PENDING',
     registeredAt: new Date().toISOString(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
@@ -775,6 +775,33 @@ export async function submitEmergencyIncident({ driverId, bikeId, type, descript
  */
 export async function autoAssignAvailableBike(driverId, driverName) {
   try {
+    // 0. STRICT SECURITY CHECK: Driver MUST be verified & approved by Fleet Admin
+    const driverSnap = await getDoc(doc(db, 'drivers', driverId));
+    if (!driverSnap.exists()) {
+      return { success: false, reason: 'DRIVER_NOT_FOUND' };
+    }
+    const dData = driverSnap.data();
+
+    // Must be approved
+    if (dData.approvalStatus !== 'APPROVED') {
+      console.warn(`[AutoAssign Blocked] Driver ${driverId} approvalStatus is ${dData.approvalStatus}, not APPROVED.`);
+      return { success: false, reason: 'DRIVER_NOT_APPROVED' };
+    }
+
+    // Must have submitted documents
+    const docsQuery = query(collection(db, 'driverDocuments'), where('driverId', '==', driverId));
+    const docsSnap = await getDocs(docsQuery);
+    if (docsSnap.empty) {
+      console.warn(`[AutoAssign Blocked] Driver ${driverId} has 0 uploaded documents.`);
+      return { success: false, reason: 'NO_DOCUMENTS_SUBMITTED' };
+    }
+
+    const hasUnverifiedDocs = docsSnap.docs.some(docItem => docItem.data().status !== 'VERIFIED');
+    if (hasUnverifiedDocs) {
+      console.warn(`[AutoAssign Blocked] Driver ${driverId} has unverified KYC documents.`);
+      return { success: false, reason: 'DOCUMENTS_PENDING_VERIFICATION' };
+    }
+
     const bikesRef = collection(db, 'bikes');
     const q = query(bikesRef, where('status', '==', 'AVAILABLE'), limit(1));
     const snap = await getDocs(q);

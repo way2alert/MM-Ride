@@ -16,6 +16,7 @@ import { requestEndDuty } from '../firebase/api';
 import { checkHubProximity } from '../utils/geofence';
 import { colors } from '../utils/colors';
 import BigButton from '../components/BigButton';
+import { stopFloatingBubble } from '../services/floatingBubbleService';
 
 export default function EndDutyScreen({ navigation }) {
   const { currentUser, driverProfile, assignedBike, activeDutySession, currentLocation } = useDriver();
@@ -99,6 +100,9 @@ export default function EndDutyScreen({ navigation }) {
         emergencyOverrideReason: reasonStr || overrideReason || 'Standard depot return',
         deviceId: driverProfile?.boundDeviceId || 'android_device_company'
       });
+
+      // Stop and remove native floating bubble overlay
+      stopFloatingBubble();
 
       Alert.alert(
         'Duty Completed! ✅',

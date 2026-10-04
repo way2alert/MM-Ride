@@ -67,7 +67,10 @@ export default function Bikes() {
   }, []);
 
   const eligibleDrivers = drivers.filter(d =>
-    (d.approvalStatus === 'APPROVED' || d.accountStatus === 'APPROVED_BIKE_NOT_ASSIGNED') &&
+    d.approvalStatus === 'APPROVED' &&
+    d.verificationStatus === 'DOCUMENTS_VERIFIED' &&
+    d.accountStatus !== 'REJECTED' &&
+    d.accountStatus !== 'SUSPENDED' &&
     !d.assignedBikeId
   );
 

@@ -17,7 +17,8 @@ import {
   Settings, 
   LogOut,
   X,
-  Radio
+  Radio,
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -105,6 +106,7 @@ export default function Sidebar({ currentTab, setTab, mobileOpen, onClose }) {
     {
       title: 'Finance & Accounts',
       items: [
+        { id: 'profit-loss', label: 'Daily Profit & Loss', icon: TrendingUp },
         { id: 'settlements', label: 'Earnings & Settlement', icon: CircleDollarSign },
         { id: 'reports', label: 'Export Reports', icon: FileText },
       ]

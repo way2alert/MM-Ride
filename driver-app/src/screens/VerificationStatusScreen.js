@@ -30,16 +30,18 @@ export default function VerificationStatusScreen({ navigation }) {
   const activeBike = assignedBike || autoAssignedBike;
   const hasBike = hasAssignedBike || !!autoAssignedBike;
 
+  const isDocumentsVerified = driverProfile?.verificationStatus === 'DOCUMENTS_VERIFIED';
+
   // Trigger celebration confetti upon approval
   useEffect(() => {
-    if (isApproved && !isSuspended && !isRejected) {
+    if (isApproved && isDocumentsVerified && !isSuspended && !isRejected) {
       setShowConfetti(true);
     }
-  }, [isApproved]);
+  }, [isApproved, isDocumentsVerified, isSuspended, isRejected]);
 
-  // Attempt auto-assign when approved but no bike assigned yet
+  // Attempt auto-assign ONLY when both approved and KYC documents are verified
   const handleAutoAssign = async () => {
-    if (!driverProfile?.id || hasBike || isScanning) return;
+    if (!driverProfile?.id || hasBike || isScanning || !isApproved || !isDocumentsVerified) return;
     setIsScanning(true);
     try {
       const res = await autoAssignAvailableBike(driverProfile.id, driverProfile.fullName);
@@ -57,10 +59,10 @@ export default function VerificationStatusScreen({ navigation }) {
   };
 
   useEffect(() => {
-    if (isApproved && !hasBike && !autoAssignTriggered && !isSuspended) {
+    if (isApproved && isDocumentsVerified && !hasBike && !autoAssignTriggered && !isSuspended && !isRejected) {
       handleAutoAssign();
     }
-  }, [isApproved, hasBike, autoAssignTriggered]);
+  }, [isApproved, isDocumentsVerified, hasBike, autoAssignTriggered, isSuspended, isRejected]);
 
   // Fetch hub details if not yet loaded
   useEffect(() => {

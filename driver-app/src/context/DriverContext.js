@@ -11,6 +11,8 @@ import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, g
 import MdmKioskOverlay from '../components/MdmKioskOverlay';
 import PrivacyNoticeModal from '../components/PrivacyNoticeModal';
 import GlobalSecurityOverlay from '../components/GlobalSecurityOverlay';
+import { startFloatingBubble, stopFloatingBubble, updateBubbleStats, subscribeToOverlayRides } from '../services/floatingBubbleService';
+import { logShiftRideEntry } from '../firebase/api';
 
 const DriverContext = createContext();
 
@@ -161,34 +163,12 @@ export function DriverProvider({ children }) {
         }
 
         // Request background permission with mandatory fleet disclosure (Compulsory for active duty)
+        // Ensure background permission is active (already guaranteed during onboarding / preflight)
         if (activeDutySession?.status === 'ACTIVE') {
           try {
             const bgStatus = await Location.getBackgroundPermissionsAsync();
             if (bgStatus.status !== 'granted') {
-              Alert.alert(
-                'Shift Location Tracking Required 📍',
-                'MM Ride requires location access set to "Allow all the time" during your active shift so that safety monitoring and depot geofencing work even when you are using Ola/Uber or when the screen is locked.\n\n(Tracking automatically stops when you end your shift).',
-                [
-                  {
-                    text: 'Allow on Shift (Compulsory)',
-                    onPress: async () => {
-                      try {
-                        const { status: newStatus } = await Location.requestBackgroundPermissionsAsync();
-                        if (newStatus !== 'granted') {
-                          Alert.alert(
-                            'Permission Required to Work',
-                            'Background location is mandatory to operate company fleet vehicles. Please choose "Allow all the time" in app settings.',
-                            [
-                              { text: 'Open Settings', onPress: () => Linking.openSettings() }
-                            ]
-                          );
-                        }
-                      } catch (e) {}
-                    }
-                  }
-                ],
-                { cancelable: false }
-              );
+              Location.requestBackgroundPermissionsAsync().catch(() => {});
             }
           } catch (e) {
             // ignore background permission warning in emulator/web
@@ -350,6 +330,54 @@ export function DriverProvider({ children }) {
 
     calculateTodayDuty();
   }, [driverProfile?.id, activeDutySession?.status]);
+
+  // 4b. Native Floating Bubble Overlay (Displays over Ola, Uber & Rapido during active duty)
+  useEffect(() => {
+    let unsubscribeOverlayEvents = null;
+
+    if (activeDutySession?.status === 'ACTIVE') {
+      const totalRides = activeDutySession.totalRidesLogged || 0;
+      const totalEarnings = activeDutySession.grossEarningsLogged || 0;
+
+      startFloatingBubble({ totalRides, totalEarnings });
+
+      unsubscribeOverlayEvents = subscribeToOverlayRides(async (rideData) => {
+        try {
+          if (!driverProfile?.id) return;
+          console.log('[DriverContext] Processing overlay ride submission from Ola/Uber:', rideData);
+          await logShiftRideEntry({
+            driverId: driverProfile.id,
+            dutyId: activeDutySession.id,
+            platform: rideData.platform || 'OLA',
+            paymentMethod: rideData.paymentMethod || 'CASH',
+            fare: rideData.fare || 0,
+            location: currentLocation
+          });
+        } catch (err) {
+          console.warn('[DriverContext] Error recording overlay ride:', err);
+        }
+      });
+    } else {
+      stopFloatingBubble();
+    }
+
+    return () => {
+      unsubscribeOverlayEvents && unsubscribeOverlayEvents();
+      if (!activeDutySession || activeDutySession.status !== 'ACTIVE') {
+        stopFloatingBubble();
+      }
+    };
+  }, [activeDutySession?.status, activeDutySession?.id, driverProfile?.id]);
+
+  // Sync running counters to floating bubble
+  useEffect(() => {
+    if (activeDutySession?.status === 'ACTIVE') {
+      updateBubbleStats({
+        totalRides: activeDutySession.totalRidesLogged || 0,
+        totalEarnings: activeDutySession.grossEarningsLogged || 0
+      });
+    }
+  }, [activeDutySession?.totalRidesLogged, activeDutySession?.grossEarningsLogged]);
 
   // 5. Dedicated Device MDM Heartbeat & Remote Lockdown Monitor
   useEffect(() => {

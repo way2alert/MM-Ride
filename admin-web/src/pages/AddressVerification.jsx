@@ -9,7 +9,7 @@ import {
   LocateFixed,
   Loader2
 } from 'lucide-react';
-import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
 import { formatDateTime } from '../utils/formatters';
@@ -140,10 +140,17 @@ export default function AddressVerification() {
 
       // Progress driver status if address is verified
       if (isVerified) {
+        const dSnap = await getDoc(doc(db, 'drivers', selectedAddr.driverId));
+        const dData = dSnap.exists() ? dSnap.data() : {};
+        const isKycDone = dData.verificationStatus === 'DOCUMENTS_VERIFIED';
+
         await updateDoc(doc(db, 'drivers', selectedAddr.driverId), {
           addressVerified: true,
-          accountStatus: 'APPROVED_BIKE_NOT_ASSIGNED',
-          approvalStatus: 'APPROVED'
+          addressVerificationStatus: 'VERIFIED',
+          ...(isKycDone ? {
+            accountStatus: 'APPROVED_BIKE_NOT_ASSIGNED',
+            approvalStatus: 'APPROVED'
+          } : {})
         });
       }
 

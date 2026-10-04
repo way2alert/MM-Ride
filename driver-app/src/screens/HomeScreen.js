@@ -13,6 +13,7 @@ import { useDriver } from '../context/DriverContext';
 import { colors } from '../utils/colors';
 import Header from '../components/Header';
 import BigButton from '../components/BigButton';
+import { checkAllPermissions } from '../services/permissionService';
 
 export default function HomeScreen({ navigation }) {
   const { 
@@ -143,7 +144,18 @@ export default function HomeScreen({ navigation }) {
         ) : (
           <TouchableOpacity
             style={styles.startWorkHeroCard}
-            onPress={() => navigation?.navigate && navigation.navigate('StartDuty')}
+            onPress={async () => {
+              try {
+                const res = await checkAllPermissions();
+                if (res.allGranted) {
+                  navigation?.navigate && navigation.navigate('StartDuty');
+                } else {
+                  navigation?.navigate && navigation.navigate('PermissionsSetup', { nextScreen: 'StartDuty' });
+                }
+              } catch (_) {
+                navigation?.navigate && navigation.navigate('StartDuty');
+              }
+            }}
             activeOpacity={0.85}
           >
             <View style={styles.startWorkInner}>

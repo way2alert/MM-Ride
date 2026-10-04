@@ -32,15 +32,15 @@ export async function logAdminAudit({
     const actorId = user?.uid || 'admin_local';
 
     await addDoc(collection(db, 'auditLogs'), {
-      driverId,
-      action,
-      relevantRecordId,
-      previousValue,
-      newValue,
+      driverId: driverId ?? null,
+      action: action || 'UNKNOWN',
+      relevantRecordId: relevantRecordId ?? null,
+      previousValue: previousValue ?? null,
+      newValue: newValue ?? null,
       actor: actorEmail,
       actorId,
       source: 'ADMIN_WEB',
-      notes,
+      notes: notes ?? '',
       timestamp: new Date().toISOString(),
       serverTimestamp: serverTimestamp()
     });

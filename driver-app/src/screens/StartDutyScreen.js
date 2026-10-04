@@ -178,30 +178,9 @@ export default function StartDutyScreen({ navigation }) {
         deviceId: driverProfile?.boundDeviceId || hardwareId || 'android_device_company'
       });
 
-      if (Platform.OS === 'android') {
-        Alert.alert(
-          'Duty Shift Started! 🚀',
-          'Live GPS monitoring is now transmitting to Operations.\n\n📱 Overlay Mode: Allow "Display over other apps" so the floating 1-tap ride logger and telemetry stay active while driving on Ola / Uber / Rapido.',
-          [
-            {
-              text: 'Enable Overlay (Settings) ⚙️',
-              onPress: async () => {
-                await openOverlaySettings();
-                navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
-              }
-            },
-            {
-              text: 'Launch Shift Overlay 🚀',
-              style: 'default',
-              onPress: () => {
-                navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
-              }
-            }
-          ]
-        );
-      } else {
-        navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
-      }
+      // Permissions and overlay are pre-granted during onboarding/device setup.
+      // Launch directly into active duty console without interrupting the driver.
+      navigation?.replace && navigation.replace('ActiveDuty', { autoOpenOverlay: true });
     } catch (err) {
       Alert.alert('Start Duty Failed', err.message);
     } finally {
