@@ -56,5 +56,10 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    // Catch-all fallback for authenticated app assets
+    match /{allPaths=**} {
+      allow read, write: if isAuthenticated();
+    }
   }
 }

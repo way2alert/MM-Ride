@@ -14,7 +14,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './config';
+import { db, storage, auth } from './config';
 
 /**
  * Fetch complete driver document
@@ -218,15 +218,18 @@ export async function uploadVerificationSelfie({ driverId, dutyId, uri, blob, ba
  * Complete Identity Challenge and clear pending verification
  */
 export async function confirmIdentityChallenge({ driverId, dutyId, photoUrl, gps }) {
+  const effectiveDriverId = driverId || auth?.currentUser?.uid;
+  if (!effectiveDriverId) throw new Error('Driver ID or authentication session required');
+
   // 1. Clear pending challenge on driver profile
-  await updateDoc(doc(db, 'drivers', driverId), {
+  await updateDoc(doc(db, 'drivers', effectiveDriverId), {
     pendingVerification: null,
     lastFaceVerifiedAt: new Date().toISOString()
   });
 
   // 2. Append to verified challenges collection
   await addDoc(collection(db, 'identityChallenges'), {
-    driverId,
+    driverId: effectiveDriverId,
     dutyId: dutyId || null,
     photoUrl,
     status: 'VERIFIED',
@@ -380,11 +383,13 @@ export async function requestEndDuty({
     console.warn('Duty start lookup error:', e);
   }
 
+  const effectiveDriverId = driverId || auth?.currentUser?.uid || null;
+
   // Calculate cumulative breaks taken during this shift
   let totalBreakMinutes = 0;
   try {
     const qParts = [where('dutyId', '==', dutyId)];
-    if (driverId) qParts.unshift(where('driverId', '==', driverId));
+    if (effectiveDriverId) qParts.unshift(where('driverId', '==', effectiveDriverId));
     const breaksSnap = await getDocs(query(collection(db, 'breaks'), ...qParts));
     breaksSnap.forEach(b => {
       totalBreakMinutes += (b.data().durationMinutes || 0);
@@ -422,9 +427,9 @@ export async function requestEndDuty({
     completedAt: serverTimestamp()
   });
 
-  if (driverId) {
+  if (effectiveDriverId) {
     try {
-      await updateDoc(doc(db, 'drivers', driverId), {
+      await updateDoc(doc(db, 'drivers', effectiveDriverId), {
         currentDutyId: null,
         isCurrentlyOnDuty: false,
         lastDutyEndedAt: endTime
@@ -453,7 +458,7 @@ export async function requestEndDuty({
     try {
       await addDoc(collection(db, 'damageReports'), {
         dutyId: dutyId || null,
-        driverId: driverId || null,
+        driverId: effectiveDriverId || null,
         bikeId: bikeId || null,
         condition: bikeCondition || 'FAIR',
         description: damageNotes || 'Damage reported on return',
@@ -722,8 +727,9 @@ export async function getShiftRideEntries({ driverId, dutyId }) {
  * Submit Leave Request
  */
 export async function submitDriverLeave({ driverId, startDate, endDate, durationDays = 1, reason }) {
+  const effectiveDriverId = driverId || auth?.currentUser?.uid;
   const leaveRef = await addDoc(collection(db, 'leaveRequests'), {
-    driverId,
+    driverId: effectiveDriverId,
     startDate,
     endDate: endDate || startDate,
     durationDays: Number(durationDays),
@@ -738,6 +744,7 @@ export async function submitDriverLeave({ driverId, startDate, endDate, duration
  * Report Emergency SOS / Incident
  */
 export async function submitEmergencyIncident({ driverId, bikeId, type, description, gps, photoBlob, photoUri }) {
+  const effectiveDriverId = driverId || auth?.currentUser?.uid;
   let photoUrl = null;
   let uploadBlob = photoBlob;
   let closeAfterUpload = false;
@@ -746,7 +753,7 @@ export async function submitEmergencyIncident({ driverId, bikeId, type, descript
     closeAfterUpload = true;
   }
   if (uploadBlob) {
-    const storagePath = `incident_photos/${driverId}/${Date.now()}_incident.jpg`;
+    const storagePath = `incident_photos/${effectiveDriverId || 'unknown'}/${Date.now()}_incident.jpg`;
     const fileRef = ref(storage, storagePath);
     await uploadBytes(fileRef, uploadBlob);
     photoUrl = await getDownloadURL(fileRef);
@@ -756,7 +763,7 @@ export async function submitEmergencyIncident({ driverId, bikeId, type, descript
   }
 
   const incRef = await addDoc(collection(db, 'incidents'), {
-    driverId,
+    driverId: effectiveDriverId,
     bikeId: bikeId || null,
     type: type || 'EMERGENCY_SOS',
     description: description || 'Driver triggered emergency button.',
@@ -941,13 +948,14 @@ export async function submitFuelFillEntry({
   receiptPhotoUri,
   gps
 }) {
+  const effectiveDriverId = driverId || auth?.currentUser?.uid;
   let dispenserPhotoUrl = null;
   let meterPhotoUrl = null;
   let receiptPhotoUrl = null;
 
   if (dispenserPhotoUri) {
     try {
-      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_dispenser.jpg`);
+      const fileRef = ref(storage, `fuel_proofs/${effectiveDriverId || 'unknown'}/${Date.now()}_dispenser.jpg`);
       const blob = await uriToNativeBlob(dispenserPhotoUri);
       await uploadBytes(fileRef, blob);
       dispenserPhotoUrl = await getDownloadURL(fileRef);
@@ -958,7 +966,7 @@ export async function submitFuelFillEntry({
 
   if (meterPhotoUri) {
     try {
-      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_meter.jpg`);
+      const fileRef = ref(storage, `fuel_proofs/${effectiveDriverId || 'unknown'}/${Date.now()}_meter.jpg`);
       const blob = await uriToNativeBlob(meterPhotoUri);
       await uploadBytes(fileRef, blob);
       meterPhotoUrl = await getDownloadURL(fileRef);
@@ -969,7 +977,7 @@ export async function submitFuelFillEntry({
 
   if (receiptPhotoUri) {
     try {
-      const fileRef = ref(storage, `fuel_proofs/${driverId}/${Date.now()}_receipt.jpg`);
+      const fileRef = ref(storage, `fuel_proofs/${effectiveDriverId || 'unknown'}/${Date.now()}_receipt.jpg`);
       const blob = await uriToNativeBlob(receiptPhotoUri);
       await uploadBytes(fileRef, blob);
       receiptPhotoUrl = await getDownloadURL(fileRef);
@@ -979,7 +987,7 @@ export async function submitFuelFillEntry({
   }
 
   const fuelDoc = await addDoc(collection(db, 'fuelExpenses'), {
-    driverId,
+    driverId: effectiveDriverId,
     bikeId: bikeId || null,
     dutyId: dutyId || null,
     amount: Number(amount),

@@ -87,7 +87,7 @@ service cloud.firestore {
           // Driver cannot self-approve; approvalStatus must stay PENDING or match current status
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus']) ||
           request.resource.data.approvalStatus == 'PENDING' ||
-          (resource.data.approvalStatus != null && request.resource.data.approvalStatus == resource.data.approvalStatus)
+          (resource.data.get('approvalStatus', '') != '' && request.resource.data.approvalStatus == resource.data.approvalStatus)
         )
         && (
           // Driver cannot modify suspension flags
@@ -96,8 +96,8 @@ service cloud.firestore {
           ])
         )
         && (
-          // Driver can only set assignedBikeId once approved
-          (resource.data.approvalStatus == 'APPROVED' && request.resource.data.accountStatus in ['BIKE_ASSIGNED', 'BIKE_HANDOVER_PENDING']) ||
+          // Driver can set assignedBikeId once approved
+          (resource.data.get('approvalStatus', '') == 'APPROVED') ||
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedBikeId'])
         )
       ) || isAdmin();
@@ -107,15 +107,15 @@ service cloud.firestore {
     // Driver Documents
     match /driverDocuments/{docId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid || isAdmin()
       );
       allow update: if isAdmin() || (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
-        resource.data.status != 'VERIFIED' &&
+        resource.data.get('driverId', '') == request.auth.uid &&
+        resource.data.get('status', '') != 'VERIFIED' &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'verifiedBy', 'verifiedAt'])
       );
       allow delete: if isAdmin();
@@ -124,14 +124,14 @@ service cloud.firestore {
     // Address & Address Verification
     match /addresses/{addressId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid || isAdmin()
       );
       allow update: if (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
+        resource.data.get('driverId', '') == request.auth.uid &&
         (
           // Driver cannot self-verify address (can only set false or keep unchanged)
           request.resource.data.isVerified == false ||
@@ -144,7 +144,7 @@ service cloud.firestore {
 
     match /addressVerifications/{verifId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow write: if isOperations();
     }
@@ -155,8 +155,11 @@ service cloud.firestore {
       allow update: if isOperations() || (
         isAuthenticated() &&
         (
-          (resource.data.status == 'AVAILABLE' && request.resource.data.status == 'ASSIGNED' && request.resource.data.assignedDriverId == request.auth.uid) ||
-          (resource.data.assignedDriverId == request.auth.uid && request.resource.data.status in ['ACTIVE', 'ASSIGNED', 'RETURNED', 'MAINTENANCE'])
+          // Self-assign available / returned bike
+          (resource.data.get('status', 'AVAILABLE') in ['AVAILABLE', 'RETURNED'] && request.resource.data.status == 'ASSIGNED' && request.resource.data.assignedDriverId == request.auth.uid) ||
+          // Assigned driver updating status or mileage/fuel telemetry
+          (resource.data.get('assignedDriverId', '') == request.auth.uid) ||
+          (request.resource.data.get('assignedDriverId', '') == request.auth.uid)
         )
       );
       allow write: if isOperations();
@@ -234,14 +237,12 @@ service cloud.firestore {
     }
 
     match /breaks/{breakId} {
-      allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
-      );
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid || isOperations()
       );
       allow update: if (
-        isAuthenticated() && resource.data.driverId == request.auth.uid
+        isAuthenticated() && resource.data.get('driverId', '') == request.auth.uid
       ) || isOperations();
       allow delete: if false;
     }
@@ -249,7 +250,7 @@ service cloud.firestore {
     // GPS and Telemetry Events (Immutable breadcrumbs)
     match /gpsEvents/{eventId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid || isAdmin()
@@ -259,7 +260,7 @@ service cloud.firestore {
 
     match /speedEvents/{eventId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated();
       allow update, delete: if false;
@@ -267,14 +268,14 @@ service cloud.firestore {
 
     match /idleAlerts/{alertId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated();
-      // Driver can only update the reason field
+      // Driver can update reason, status and timestamp
       allow update: if (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['driverReason', 'reasonSubmittedAt'])
+        resource.data.get('driverId', '') == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['driverReason', 'reasonSubmittedAt', 'status', 'updatedAt'])
       ) || isOperations();
       allow delete: if false;
     }
@@ -282,15 +283,15 @@ service cloud.firestore {
     // Daily Ride Submissions (Dual entry for Ola/Uber/Rapido income)
     match /dailyEarningsSubmissions/{submissionId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
-        request.resource.data.driverId == request.auth.uid
+        request.resource.data.driverId == request.auth.uid || isAdmin()
       );
       allow update: if isFinance() || (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
-        resource.data.status == 'PENDING'
+        resource.data.get('driverId', '') == request.auth.uid &&
+        resource.data.get('status', 'PENDING') == 'PENDING'
       );
       allow delete: if false;
     }
@@ -298,7 +299,7 @@ service cloud.firestore {
     // Official Earnings & Settlements (FINANCE ONLY - DRIVERS CANNOT EDIT OR CREATE!)
     match /earnings/{earningId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create, update: if isFinance();
       allow delete: if false;
@@ -306,7 +307,7 @@ service cloud.firestore {
 
     match /settlements/{settlementId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create, update: if isFinance();
       allow delete: if false;
@@ -314,7 +315,7 @@ service cloud.firestore {
 
     match /settlementAdjustments/{adjustmentId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isFinance();
       allow update, delete: if false; // Append-only audit adjustments
@@ -323,7 +324,7 @@ service cloud.firestore {
     // Owner Fuel Expense Ledger (Owner covers fuel, strictly zero impact on worker ride share)
     match /fuelExpenses/{expenseId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid ||
@@ -332,8 +333,8 @@ service cloud.firestore {
       );
       allow update: if isFinance() || isOperations() || (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
-        resource.data.status == 'PENDING_APPROVAL'
+        resource.data.get('driverId', '') == request.auth.uid &&
+        resource.data.get('status', '') == 'PENDING_APPROVAL'
       );
       allow delete: if isAdmin();
     }
@@ -341,15 +342,15 @@ service cloud.firestore {
     // Leave Requests
     match /leaveRequests/{leaveId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
         request.resource.data.driverId == request.auth.uid || isAdmin()
       );
       allow update: if isOperations() || (
         isAuthenticated() &&
-        resource.data.driverId == request.auth.uid &&
-        resource.data.status == 'PENDING'
+        resource.data.get('driverId', '') == request.auth.uid &&
+        resource.data.get('status', 'PENDING') == 'PENDING'
       );
       allow delete: if false;
     }
@@ -357,10 +358,10 @@ service cloud.firestore {
     // Incidents, Accidents & Damage Reports
     match /incidents/{incidentId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
-        request.resource.data.driverId == request.auth.uid || isOperations()
+        request.resource.data.driverId == request.auth.uid || isOperations() || isAdmin()
       );
       allow update: if isOperations();
       allow delete: if false;
@@ -368,13 +369,37 @@ service cloud.firestore {
 
     match /damageReports/{damageId} {
       allow read: if isAuthenticated() && (
-        resource.data.driverId == request.auth.uid || isAdmin()
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
       );
       allow create: if isAuthenticated() && (
-        request.resource.data.driverId == request.auth.uid || isOperations()
+        request.resource.data.driverId == request.auth.uid || isOperations() || isAdmin()
       );
       allow update: if isOperations();
       allow delete: if false;
+    }
+
+    // In-shift Identity & Face Verification Challenges
+    match /identityChallenges/{challengeId} {
+      allow read: if isAuthenticated() && (
+        resource.data.get('driverId', '') == request.auth.uid || isAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.driverId == request.auth.uid || isAdmin()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Client Crash & Telemetry Diagnostics
+    match /driver_app_crashes/{crashId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Bike Maintenance & Periodic Service Logs
+    match /bikeMaintenanceLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow write: if isOperations() || isAdmin();
     }
 
     match /challans/{challanId} {
