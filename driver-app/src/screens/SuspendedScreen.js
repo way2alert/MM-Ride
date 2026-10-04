@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import { colors } from '../utils/colors';
 import { useDriver } from '../context/DriverContext';
 import BigButton from '../components/BigButton';
+import { bringAppToFront, showOverlayAlert } from '../services/floatingBubbleService';
 
 export default function SuspendedScreen() {
   const { driverProfile, assignedBike, logout } = useDriver();
@@ -22,6 +23,16 @@ export default function SuspendedScreen() {
   const driverId = driverProfile?.id || '—';
   const reason = driverProfile?.suspensionReason || 'Operational review pending by MM Ride Fleet Operations';
   const bikeReg = driverProfile?.assignedBikeRegistration || assignedBike?.registrationNumber || 'None';
+
+  useEffect(() => {
+    bringAppToFront();
+    showOverlayAlert({
+      title: 'ACCOUNT SUSPENDED ⛔',
+      message: reason,
+      alertType: 'SUSPENDED',
+      autoOpenApp: true
+    });
+  }, [reason]);
 
   const primaryAdminPhone = '9841307455';
   const backupAdminPhone = '7200723901';

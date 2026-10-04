@@ -13,6 +13,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { uploadVerificationSelfie, confirmIdentityChallenge } from '../firebase/api';
 import { colors } from '../utils/colors';
+import { bringAppToFront, showOverlayAlert, dismissOverlayAlert } from '../services/floatingBubbleService';
 
 export default function GlobalSecurityOverlay({
   driverProfile,
@@ -28,6 +29,29 @@ export default function GlobalSecurityOverlay({
   const [countdown, setCountdown] = useState(90);
   const [selfieUri, setSelfieUri] = useState(null);
   const [submittingSelfie, setSubmittingSelfie] = useState(false);
+
+  // Auto-bring MM Ride to foreground & display overlay banner over Ola/Uber when alerts trigger
+  useEffect(() => {
+    if (isImmobilized) {
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'ENGINE IMMOBILIZED',
+        message: 'இந்த பைக்கின் இன்ஜின் நிர்வாகத்தால் ரிமோட் மூலம் நிறுத்தப்பட்டுள்ளது.',
+        alertType: 'IMMOBILIZED',
+        autoOpenApp: true
+      });
+    } else if (pendingChallenge) {
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'LIVE SELFIE (90s)',
+        message: 'நிர்வாகம் நேரடி முக சரிபார்ப்பு கோரியுள்ளது. 90 வினாடிகளுக்குள் செல்ஃபி எடுக்கவும்.',
+        alertType: 'FACE_CHALLENGE',
+        autoOpenApp: true
+      });
+    } else {
+      dismissOverlayAlert();
+    }
+  }, [isImmobilized, pendingChallenge?.challengeId]);
 
   // 90s Countdown Timer for Live Identity Selfie Challenge
   useEffect(() => {

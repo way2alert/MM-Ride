@@ -40,16 +40,33 @@ class FloatingBubbleService : Service() {
     private var badgeTextView: TextView? = null
     private var fareInput: EditText? = null
 
+    // Urgent Alert Overlay View & State
+    private var alertBannerView: LinearLayout? = null
+    private var alertTitleTextView: TextView? = null
+    private var alertMessageTextView: TextView? = null
+    private var hasActiveAlert: Boolean = false
+    private var activeAlertTitle: String = ""
+    private var activeAlertMessage: String = ""
+
     companion object {
         const val CHANNEL_ID = "mmride_floating_bubble_channel"
         const val NOTIFICATION_ID = 9981
 
+        const val ALERT_CHANNEL_ID = "mmride_urgent_alerts_channel"
+        const val ALERT_NOTIFICATION_ID = 9982
+
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
         const val ACTION_UPDATE = "ACTION_UPDATE"
+        const val ACTION_SHOW_ALERT = "ACTION_SHOW_ALERT"
+        const val ACTION_DISMISS_ALERT = "ACTION_DISMISS_ALERT"
 
         const val EXTRA_TOTAL_RIDES = "EXTRA_TOTAL_RIDES"
         const val EXTRA_TOTAL_EARNINGS = "EXTRA_TOTAL_EARNINGS"
+        const val EXTRA_ALERT_TITLE = "EXTRA_ALERT_TITLE"
+        const val EXTRA_ALERT_MESSAGE = "EXTRA_ALERT_MESSAGE"
+        const val EXTRA_ALERT_TYPE = "EXTRA_ALERT_TYPE"
+        const val EXTRA_AUTO_OPEN_APP = "EXTRA_AUTO_OPEN_APP"
 
         var isRunning: Boolean = false
             private set
@@ -83,6 +100,16 @@ class FloatingBubbleService : Service() {
                 val earnings = intent?.getDoubleExtra(EXTRA_TOTAL_EARNINGS, totalEarnings) ?: totalEarnings
                 updateStats(rides, earnings)
             }
+            ACTION_SHOW_ALERT -> {
+                val title = intent?.getStringExtra(EXTRA_ALERT_TITLE) ?: "URGENT ALERT"
+                val message = intent?.getStringExtra(EXTRA_ALERT_MESSAGE) ?: "Please open MM Ride immediately"
+                val alertType = intent?.getStringExtra(EXTRA_ALERT_TYPE) ?: "GENERAL"
+                val autoOpen = intent?.getBooleanExtra(EXTRA_AUTO_OPEN_APP, true) ?: true
+                showAlertOverlay(title, message, alertType, autoOpen)
+            }
+            ACTION_DISMISS_ALERT -> {
+                dismissAlertOverlay()
+            }
         }
 
         return START_STICKY
@@ -105,6 +132,9 @@ class FloatingBubbleService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // 1. Shift Overlay Background Channel
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "MM Ride Shift Overlay",
@@ -113,9 +143,52 @@ class FloatingBubbleService : Service() {
                 description = "Keeps the 1-tap ride logger bubble active over Ola & Uber"
                 setShowBadge(false)
             }
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(channel)
+
+            // 2. Urgent Alerts Heads-Up Channel (High Priority with Sound, Vibration & Heads-Up Display)
+            val alertChannel = NotificationChannel(
+                ALERT_CHANNEL_ID,
+                "MM Ride Critical Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Urgent alerts from fleet operations and safety sensors"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 400, 200, 400, 200, 600)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            nm.createNotificationChannel(alertChannel)
         }
+    }
+
+    private fun postUrgentNotification(title: String, message: String) {
+        try {
+            val openAppIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                ALERT_NOTIFICATION_ID,
+                openAppIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val alertNotification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setContentTitle("🚨 $title")
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setVibrate(longArrayOf(0, 400, 200, 400, 200, 600))
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setFullScreenIntent(pendingIntent, true)
+                .build()
+
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(ALERT_NOTIFICATION_ID, alertNotification)
+        } catch (_: Exception) {}
     }
 
     private fun buildForegroundNotification(): Notification {
@@ -161,7 +234,7 @@ class FloatingBubbleService : Service() {
             y = dp(180)
         }
 
-        // Root Container holds either compact pill or expanded card
+        // Root Container holds compact pill, expanded quick logger card, or urgent alert card
         bubbleContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -171,9 +244,13 @@ class FloatingBubbleService : Service() {
         // 2. EXPANDED QUICK LOGGER CARD
         expandedView = createExpandedCardView()
         expandedView?.visibility = View.GONE
+        // 3. URGENT OVERLAY ALERT CARD
+        alertBannerView = createAlertBannerView()
+        alertBannerView?.visibility = View.GONE
 
         bubbleContainer?.addView(compactView)
         bubbleContainer?.addView(expandedView)
+        bubbleContainer?.addView(alertBannerView)
 
         attachTouchDragListener(compactView!!)
 
@@ -517,6 +594,169 @@ class FloatingBubbleService : Service() {
         badgeTextView?.text = if (rides > 0) "$rides • ₹${earnings.toInt()}" else "0 rides"
     }
 
+    private fun createAlertBannerView(): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val screenWidth = resources.displayMetrics.widthPixels
+            val cardWidth = Math.min(dp(320), screenWidth - dp(32))
+            layoutParams = LinearLayout.LayoutParams(cardWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setPadding(dp(16), dp(14), dp(16), dp(16))
+
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#450A0A"))
+                setStroke(dp(2), Color.parseColor("#EF4444"))
+                cornerRadius = dp(16).toFloat()
+            }
+        }
+
+        // Header: Alert Title & Close [X] Button
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        alertTitleTextView = TextView(this).apply {
+            text = "🚨 URGENT ADMIN ALERT"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val dismissBtn = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.parseColor("#FECACA"))
+            textSize = 18f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener {
+                dismissAlertOverlay()
+            }
+        }
+
+        headerRow.addView(alertTitleTextView)
+        headerRow.addView(dismissBtn)
+        card.addView(headerRow)
+
+        // Message text
+        alertMessageTextView = TextView(this).apply {
+            text = "Action required immediately on MM Ride."
+            setTextColor(Color.parseColor("#FEE2E2"))
+            textSize = 12f
+            setPadding(0, dp(6), 0, dp(14))
+        }
+        card.addView(alertMessageTextView)
+
+        // Action Button: OPEN MM RIDE FULL-SCREEN
+        val actionBtn = Button(this).apply {
+            text = "↗️ OPEN MM RIDE NOW"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(0, dp(12), 0, dp(12))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#DC2626"))
+                cornerRadius = dp(10).toFloat()
+            }
+            setOnClickListener {
+                launchAppToFront()
+                dismissAlertOverlay()
+            }
+        }
+        card.addView(actionBtn)
+
+        return card
+    }
+
+    private fun showAlertOverlay(title: String, message: String, alertType: String, autoOpenApp: Boolean) {
+        hasActiveAlert = true
+        activeAlertTitle = title
+        activeAlertMessage = message
+
+        postUrgentNotification(title, message)
+
+        if (autoOpenApp) {
+            launchAppToFront()
+        }
+
+        val wm = windowManager ?: return
+        val params = bubbleParams ?: return
+
+        // Update pill view to alert styling
+        badgeTextView?.apply {
+            text = "🚨 $title"
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#DC2626"))
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+
+        compactView?.background = GradientDrawable().apply {
+            setColor(Color.parseColor("#450A0A"))
+            setStroke(dp(2), Color.parseColor("#EF4444"))
+            cornerRadius = dp(24).toFloat()
+        }
+
+        alertTitleTextView?.text = "🚨 $title"
+        alertMessageTextView?.text = message
+
+        // Show alert banner over Ola/Uber
+        compactView?.visibility = View.GONE
+        expandedView?.visibility = View.GONE
+        alertBannerView?.visibility = View.VISIBLE
+
+        params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        try {
+            wm.updateViewLayout(bubbleContainer, params)
+        } catch (_: Exception) {}
+    }
+
+    private fun dismissAlertOverlay() {
+        hasActiveAlert = false
+        val wm = windowManager ?: return
+        val params = bubbleParams ?: return
+
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(ALERT_NOTIFICATION_ID)
+        } catch (_: Exception) {}
+
+        // Restore normal pill
+        compactView?.background = GradientDrawable().apply {
+            setColor(Color.parseColor("#0A0D14"))
+            setStroke(dp(2), Color.parseColor("#F59E0B"))
+            cornerRadius = dp(24).toFloat()
+        }
+
+        badgeTextView?.apply {
+            text = if (totalRides > 0) "$totalRides • ₹${totalEarnings.toInt()}" else "0 rides"
+            setTextColor(Color.BLACK)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F59E0B"))
+                cornerRadius = dp(12).toFloat()
+            }
+        }
+
+        alertBannerView?.visibility = View.GONE
+        expandedView?.visibility = View.GONE
+        compactView?.visibility = View.VISIBLE
+
+        params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        try {
+            wm.updateViewLayout(bubbleContainer, params)
+        } catch (_: Exception) {}
+    }
+
+    private fun launchAppToFront() {
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+        } catch (_: Exception) {}
+    }
+
     private fun attachTouchDragListener(view: View) {
         view.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
@@ -555,8 +795,11 @@ class FloatingBubbleService : Service() {
                     }
                     MotionEvent.ACTION_UP -> {
                         if (!isDragging) {
-                            // User tapped the bubble -> Expand the Quick Logger Card!
-                            expandCard()
+                            if (hasActiveAlert) {
+                                launchAppToFront()
+                            } else {
+                                expandCard()
+                            }
                         }
                         return true
                     }

@@ -15,6 +15,7 @@ import { WebView } from 'react-native-webview';
 import { colors } from '../utils/colors';
 import { verifyAdminExitPin, clearRemoteAlarm } from '../services/deviceMdmService';
 import { playSirenSound, stopSirenSound } from '../services/sirenSoundService';
+import { bringAppToFront, showOverlayAlert, dismissOverlayAlert } from '../services/floatingBubbleService';
 
 export default function MdmKioskOverlay({
   restrictionState,
@@ -46,9 +47,27 @@ export default function MdmKioskOverlay({
 
   useEffect(() => {
     if (isAlarm) {
+      // Bring MM Ride directly to front over any active app (Ola/Uber)
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'SIREN ALARM ACTIVATED 📢',
+        message: 'Device locator siren triggered by fleet operations.',
+        alertType: 'SIREN',
+        autoOpenApp: true
+      });
       // Start native audio siren and pulse emergency vibration
       playSirenSound().catch(() => {});
       Vibration.vibrate([0, 600, 200, 600, 200, 1000], true);
+    } else if (isRestricted) {
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'DEVICE RESTRICTED 🔒',
+        message: customMessage || 'This device is restricted by MM Ride fleet policy.',
+        alertType: 'RESTRICTED',
+        autoOpenApp: true
+      });
+      stopSirenSound().catch(() => {});
+      Vibration.cancel();
     } else {
       stopSirenSound().catch(() => {});
       Vibration.cancel();
@@ -57,7 +76,7 @@ export default function MdmKioskOverlay({
       stopSirenSound().catch(() => {});
       Vibration.cancel();
     };
-  }, [isAlarm]);
+  }, [isAlarm, isRestricted, customMessage]);
 
   const handleStopAlarm = async () => {
     setAlarmDismissed(true);

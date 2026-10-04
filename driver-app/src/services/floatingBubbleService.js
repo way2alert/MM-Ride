@@ -78,3 +78,58 @@ export function subscribeToOverlayRides(callback) {
     return () => {};
   }
 }
+
+/**
+ * Brings the MM Ride main activity immediately to the foreground over any active app
+ * (e.g. Ola, Uber, Rapido, Google Maps). Allowed via SYSTEM_ALERT_WINDOW / Headwind MDM.
+ */
+export async function bringAppToFront() {
+  if (Platform.OS !== 'android' || !FloatingBubbleModule?.bringAppToFront) return false;
+  try {
+    const res = await FloatingBubbleModule.bringAppToFront();
+    return res;
+  } catch (err) {
+    console.warn('[FloatingBubble] bringAppToFront error:', err?.message || err);
+    return false;
+  }
+}
+
+/**
+ * Displays a high-visibility, urgent alert overlay banner directly over Ola / Uber / Rapido
+ * and optionally auto-launches MM Ride full-screen.
+ */
+export async function showOverlayAlert({
+  title = 'URGENT ALERT',
+  message = 'Please check MM Ride',
+  alertType = 'GENERAL',
+  autoOpenApp = true
+} = {}) {
+  if (Platform.OS !== 'android' || !FloatingBubbleModule?.showOverlayAlert) return false;
+  try {
+    const res = await FloatingBubbleModule.showOverlayAlert(
+      String(title),
+      String(message),
+      String(alertType),
+      Boolean(autoOpenApp)
+    );
+    return res;
+  } catch (err) {
+    console.warn('[FloatingBubble] showOverlayAlert error:', err?.message || err);
+    return false;
+  }
+}
+
+/**
+ * Dismisses the urgent alert banner from the floating overlay
+ */
+export async function dismissOverlayAlert() {
+  if (Platform.OS !== 'android' || !FloatingBubbleModule?.dismissOverlayAlert) return false;
+  try {
+    const res = await FloatingBubbleModule.dismissOverlayAlert();
+    return res;
+  } catch (err) {
+    console.warn('[FloatingBubble] dismissOverlayAlert error:', err?.message || err);
+    return false;
+  }
+}
+

@@ -25,6 +25,7 @@ import BigButton from '../components/BigButton';
 import QuickRideLoggerModal from '../components/QuickRideLoggerModal';
 import FloatingShiftOverlayHUD from '../components/FloatingShiftOverlayHUD';
 import { syncOfflineRides } from '../services/offlineQueueService';
+import { bringAppToFront, showOverlayAlert, dismissOverlayAlert } from '../services/floatingBubbleService';
 
 export default function ActiveDutyScreen({ navigation, route }) {
   useKeepAwake();
@@ -215,6 +216,19 @@ export default function ActiveDutyScreen({ navigation, route }) {
     return () => clearInterval(idleTimer);
   }, [driverProfile?.id]);
 
+  // Bring MM Ride to front and show overlay alert when Idle Alert is active
+  useEffect(() => {
+    if (idleAlertDoc) {
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'IDLE ALERT (>15 MINS) ⚠️',
+        message: 'வாகனம் நீண்ட நேரம் ஒரே இடத்தில் உள்ளது. காரணத்தை பதிவிடவும்.',
+        alertType: 'IDLE',
+        autoOpenApp: true
+      });
+    }
+  }, [idleAlertDoc?.id]);
+
   // Listen for Live Identity Challenges, Policy, and Remote Engine Immobilization
   useEffect(() => {
     if (!driverProfile?.id) return;
@@ -249,10 +263,17 @@ export default function ActiveDutyScreen({ navigation, route }) {
   const isGeofenceWarning = distFromHubKm > 35 && distFromHubKm <= 45;
   const isGeofenceBreach = distFromHubKm > 45;
 
-  // Auto-log Geofence Breach Incident to Firestore
+  // Auto-log Geofence Breach Incident to Firestore & Alert Driver
   useEffect(() => {
     if (isGeofenceBreach && !geofenceBreachLogged && driverProfile?.id) {
       setGeofenceBreachLogged(true);
+      bringAppToFront();
+      showOverlayAlert({
+        title: 'GEOFENCE PERIMETER BREACH ⚠️',
+        message: `Driver moved vehicle ${distFromHubKm} km outside authorized operations perimeter. Return to hub.`,
+        alertType: 'GEOFENCE',
+        autoOpenApp: true
+      });
       addDoc(collection(db, 'securityAlerts'), {
         type: 'GEOFENCE_EXIT_BREACH',
         driverId: driverProfile.id,
@@ -270,6 +291,7 @@ export default function ActiveDutyScreen({ navigation, route }) {
       }).catch(console.warn);
     } else if (!isGeofenceBreach && geofenceBreachLogged && driverProfile?.id) {
       setGeofenceBreachLogged(false);
+      dismissOverlayAlert();
       updateDoc(doc(db, 'drivers', driverProfile.id), {
         geofenceBreach: false,
         distFromHubKm
@@ -287,6 +309,13 @@ export default function ActiveDutyScreen({ navigation, route }) {
       if (timeSinceHigh < 20000 && !showWelfareModal) {
         setShowWelfareModal(true);
         setWelfareCountdown(60);
+        bringAppToFront();
+        showOverlayAlert({
+          title: 'ACCIDENT WELFARE CHECK (60s) 🆘',
+          message: 'Sudden deceleration detected! Are you safe?',
+          alertType: 'WELFARE',
+          autoOpenApp: true
+        });
       }
     }
   }, [currentSpeed, prevSpeed, highSpeedTimestamp, showWelfareModal]);
@@ -338,6 +367,7 @@ export default function ActiveDutyScreen({ navigation, route }) {
 
   const handleWelfareResponse = async (status) => {
     setShowWelfareModal(false);
+    dismissOverlayAlert();
     const recordedInitialSpeed = prevSpeed;
     setPrevSpeed(0);
     if (!driverProfile?.id) return;
@@ -499,6 +529,7 @@ export default function ActiveDutyScreen({ navigation, route }) {
       }
       setIdleAlertDoc(null);
       setIdleReasonText('');
+      dismissOverlayAlert();
       Alert.alert('Reason Submitted', 'Your status explanation has been sent to Operations.');
     } catch (e) {
       Alert.alert('Error', e.message);

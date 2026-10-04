@@ -41,6 +41,77 @@ class FloatingBubbleModule(private val reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * Brings the MM Ride main activity immediately to the foreground over any running app
+     * (e.g. Ola, Uber, Rapido, Google Maps). Allowed via SYSTEM_ALERT_WINDOW / Headwind MDM.
+     */
+    @ReactMethod
+    fun bringAppToFront(promise: Promise) {
+        try {
+            val intent = Intent(reactContext, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            reactContext.startActivity(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("BRING_FRONT_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * Displays a high-visibility, urgent alert directly in the floating overlay over Ola/Uber
+     * and optionally auto-launches MM Ride full-screen.
+     */
+    @ReactMethod
+    fun showOverlayAlert(title: String, message: String, alertType: String, autoOpenApp: Boolean, promise: Promise) {
+        try {
+            val intent = Intent(reactContext, FloatingBubbleService::class.java).apply {
+                action = FloatingBubbleService.ACTION_SHOW_ALERT
+                putExtra(FloatingBubbleService.EXTRA_ALERT_TITLE, title)
+                putExtra(FloatingBubbleService.EXTRA_ALERT_MESSAGE, message)
+                putExtra(FloatingBubbleService.EXTRA_ALERT_TYPE, alertType)
+                putExtra(FloatingBubbleService.EXTRA_AUTO_OPEN_APP, autoOpenApp)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                reactContext.startForegroundService(intent)
+            } else {
+                reactContext.startService(intent)
+            }
+
+            if (autoOpenApp) {
+                val openIntent = Intent(reactContext, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                reactContext.startActivity(openIntent)
+            }
+
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("SHOW_ALERT_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * Dismisses the active urgent alert banner from the floating overlay
+     */
+    @ReactMethod
+    fun dismissOverlayAlert(promise: Promise) {
+        try {
+            val intent = Intent(reactContext, FloatingBubbleService::class.java).apply {
+                action = FloatingBubbleService.ACTION_DISMISS_ALERT
+            }
+            reactContext.startService(intent)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("DISMISS_ALERT_ERROR", e.message, e)
+        }
+    }
+
     @ReactMethod
     fun startBubble(options: ReadableMap?, promise: Promise) {
         try {
