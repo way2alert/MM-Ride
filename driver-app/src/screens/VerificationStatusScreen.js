@@ -247,8 +247,14 @@ export default function VerificationStatusScreen({ navigation }) {
                 </View>
 
                 <View style={styles.specBox}>
-                  <Text style={styles.specLabel}>FUEL / BATTERY</Text>
-                  <Text style={[styles.specVal, { color: '#34D399' }]}>{activeBike?.currentFuelCharge || 100}%</Text>
+                  <Text style={styles.specLabel}>
+                    {activeBike?.fuelType === 'CNG' || activeBike?.fuelType === 'CNG_PETROL' ? 'CNG LEVEL' : 'FUEL / BATTERY'}
+                  </Text>
+                  <Text style={[styles.specVal, { color: '#34D399' }]}>
+                    {activeBike?.fuelType === 'CNG' || activeBike?.fuelType === 'CNG_PETROL' 
+                      ? `${activeBike?.currentFuelKg || activeBike?.currentFuelCharge || 2} kg`
+                      : `${activeBike?.currentFuelCharge || 100}%`}
+                  </Text>
                 </View>
               </View>
             </View>

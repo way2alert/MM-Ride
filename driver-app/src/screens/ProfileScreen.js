@@ -60,9 +60,9 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.rowVal}>{assignedBike?.registrationNumber || driverProfile?.assignedBikeRegistration || 'None'}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.rowLabel}>Fuel / EV Model:</Text>
+            <Text style={styles.rowLabel}>Fuel / EV / CNG Model:</Text>
             <Text style={styles.rowVal}>
-              {assignedBike ? `${assignedBike.make || ''} ${assignedBike.model || ''} (${assignedBike.fuelType || 'Petrol'})`.trim() : 'Not Assigned'}
+              {assignedBike ? `${assignedBike.make || ''} ${assignedBike.model || ''} (${assignedBike.fuelType === 'CNG' ? 'CNG' : assignedBike.fuelType === 'CNG_PETROL' ? 'CNG + Petrol Dual-Fuel' : assignedBike.fuelType || 'Petrol'})`.trim() : 'Not Assigned'}
             </Text>
           </View>
           <View style={styles.row}>
@@ -102,7 +102,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={{ fontWeight: 'bold' }}>strictly during active duty shifts</Text>
             {'.\n• '}
             <Text style={{ fontWeight: 'bold' }}>No personal data monitoring:</Text>
-            {' No tracking of personal calls, WhatsApp, SMS, files, or off-duty location.\n• Owner pays Petrol & Normal Maintenance.'}
+            {' No tracking of personal calls, WhatsApp, SMS, files, or off-duty location.\n• Owner pays CNG, Petrol & Normal Maintenance.'}
           </Text>
         </View>
 

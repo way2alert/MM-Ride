@@ -1,7 +1,10 @@
 package com.mmride.driver
 
+import android.app.AppOpsManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -173,6 +176,36 @@ class FloatingBubbleModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun isBubbleRunning(promise: Promise) {
         promise.resolve(FloatingBubbleService.isRunning)
+    }
+
+    @ReactMethod
+    fun hasUsageStatsPermission(promise: Promise) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            val appOps = reactContext.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+            val mode = appOps?.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                reactContext.packageName
+            )
+            promise.resolve(mode == AppOpsManager.MODE_ALLOWED)
+        } else {
+            promise.resolve(true)
+        }
+    }
+
+    @ReactMethod
+    fun requestUsageStatsPermission(promise: Promise) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                reactContext.startActivity(intent)
+            }
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("USAGE_STATS_ERROR", e.message, e)
+        }
     }
 
     @ReactMethod

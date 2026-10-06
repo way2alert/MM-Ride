@@ -15,12 +15,19 @@ import {
   Power,
   CheckCircle2,
   AlertCircle,
-  Loader2
+  Loader2,
+  Eye,
+  ShieldCheck,
+  PhoneCall,
+  Video,
+  AlertOctagon,
+  Maximize2,
+  Download
 } from 'lucide-react';
 import LiveMap from '../components/LiveMap';
 import { subscribeToCollection, logAdminAudit } from '../firebase/services';
 import { formatDateTime } from '../utils/formatters';
-import { doc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
 export default function LiveMonitoring({ onSelectDriver }) {
@@ -28,9 +35,11 @@ export default function LiveMonitoring({ onSelectDriver }) {
   const [driverDevices, setDriverDevices] = useState([]);
   const [hubs, setHubs] = useState([]);
   const [dutySessions, setDutySessions] = useState([]);
+  const [incidents, setIncidents] = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(null);
-  const [actionLoading, setActionLoading] = useState(null); // 'SELFIE' | 'ENGINE' | 'DOSSIER'
+  const [actionLoading, setActionLoading] = useState(null); // 'SELFIE' | 'ENGINE' | 'DOSSIER' | 'SAFETY_CAM_FRONT' | 'SAFETY_CAM_BACK'
   const [actionFeedback, setActionFeedback] = useState(null); // { type, title, message, actionButton }
+  const [activeSafetyInspection, setActiveSafetyInspection] = useState(null);
   const [filterMode, setFilterMode] = useState('ALL'); // ALL, DUTY, MOVING, IDLE, OVERSPEED
   const [speedThreshold, setSpeedThreshold] = useState(60);
   const driverGpsHistoryRef = useRef(new Map());
@@ -40,6 +49,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
     const unsubDevices = subscribeToCollection('driverDevices', setDriverDevices);
     const unsubHubs = subscribeToCollection('hubs', setHubs);
     const unsubDuty = subscribeToCollection('dutySessions', setDutySessions);
+    const unsubIncidents = subscribeToCollection('incidents', setIncidents);
     const unsubSettings = onSnapshot(doc(db, 'settings', 'system'), (snap) => {
       if (snap.exists() && snap.data().speedAlertThresholdKmh) {
         setSpeedThreshold(Number(snap.data().speedAlertThresholdKmh));
@@ -51,9 +61,25 @@ export default function LiveMonitoring({ onSelectDriver }) {
       unsubDevices();
       unsubHubs();
       unsubDuty();
+      unsubIncidents();
       unsubSettings();
     };
   }, []);
+
+  // Real-time listener on active safety inspection request
+  useEffect(() => {
+    if (!activeSafetyInspection?.id) return;
+    const unsub = onSnapshot(doc(db, 'safetyInspections', activeSafetyInspection.id), (snap) => {
+      if (snap.exists()) {
+        setActiveSafetyInspection(prev => ({
+          ...prev,
+          ...snap.data()
+        }));
+      }
+    }, (err) => console.warn('Safety inspection listener error:', err));
+
+    return () => unsub();
+  }, [activeSafetyInspection?.id]);
 
   // Primary active hub coordinates (Delhi NCR / Sitapuri default)
   const primaryHub = hubs.length > 0 && typeof hubs[0].latitude === 'number' ? hubs[0] : null;
@@ -158,7 +184,7 @@ export default function LiveMonitoring({ onSelectDriver }) {
       };
     }
 
-    // Calculate shift distance from pickup GPS
+    // Calculate shift distance from real-time road accumulation or pickup GPS
     let shiftDistKm = 0;
     const activeDuty = dutySessions.find(ds => (ds.id === driver.currentDutyId || ds.driverId === driver.id) && ds.status === 'ACTIVE');
     if (activeDuty?.pickupGps?.latitude && effectiveLocation?.latitude) {
@@ -173,10 +199,21 @@ export default function LiveMonitoring({ onSelectDriver }) {
       shiftDistKm = Math.round((R * c) * 10) / 10;
     }
 
+    const effectiveShiftKm = (typeof driver.shiftDistanceKm === 'number' && driver.shiftDistanceKm > 0)
+      ? driver.shiftDistanceKm
+      : (typeof activeDuty?.liveDistanceKm === 'number' && activeDuty.liveDistanceKm > 0)
+        ? activeDuty.liveDistanceKm
+        : (typeof activeDuty?.gpsDistanceKm === 'number' && activeDuty.gpsDistanceKm > 0)
+          ? activeDuty.gpsDistanceKm
+          : (typeof driver.liveDistanceKm === 'number' && driver.liveDistanceKm > 0)
+            ? driver.liveDistanceKm
+            : shiftDistKm;
+
     return {
       ...driver,
       lastKnownLocation: effectiveLocation,
-      shiftDistanceKm: shiftDistKm,
+      shiftDistanceKm: effectiveShiftKm,
+      activeDutySession: activeDuty || null,
       deviceTelemetry: dev ? {
         batteryLevel: dev.batteryLevel,
         isCharging: dev.isCharging,
@@ -294,6 +331,51 @@ export default function LiveMonitoring({ onSelectDriver }) {
       setActionFeedback({
         type: 'danger',
         title: 'Challenge Dispatch Failed',
+        message: e.message
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRequestSafetySnapshot = async (driver, cameraFacing = 'front') => {
+    if (!driver?.id) return;
+    setActionLoading(`SAFETY_CAM_${cameraFacing.toUpperCase()}`);
+    const inspectionId = `INSP_${Date.now()}`;
+    const initialPayload = {
+      id: inspectionId,
+      driverId: driver.id,
+      driverName: driver.fullName || 'Driver',
+      driverPhone: driver.mobileNumber || '',
+      bikeRegistration: driver.assignedBikeRegistration || 'Assigned Bike',
+      cameraFacing,
+      triggerType: 'ADMIN_ON_DEMAND',
+      status: 'PENDING',
+      requestedAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, 'safetyInspections', inspectionId), initialPayload);
+      await updateDoc(doc(db, 'drivers', driver.id), {
+        pendingSafetyInspection: {
+          inspectionId,
+          triggerType: 'ADMIN_ON_DEMAND',
+          cameraFacing,
+          requestedAt: new Date().toISOString(),
+          status: 'PENDING'
+        }
+      });
+      await logAdminAudit({
+        driverId: driver.id,
+        action: 'SAFETY_SNAPSHOT_REQUESTED',
+        notes: `Admin requested live optical ${cameraFacing} safety snapshot from vehicle ${driver.assignedBikeRegistration || driver.fullName}.`
+      });
+
+      setActiveSafetyInspection(initialPayload);
+    } catch (e) {
+      setActionFeedback({
+        type: 'danger',
+        title: 'Safety Snapshot Failed',
         message: e.message
       });
     } finally {
@@ -627,8 +709,111 @@ export default function LiveMonitoring({ onSelectDriver }) {
   const allAlerts = driversWithGps.map(d => ({ driver: d, risk: evaluateAbscondingRisk(d) }));
   const criticalAlerts = allAlerts.filter(x => x.risk.level === 'CRITICAL');
 
+  const activeCrashIncidents = incidents.filter(inc => 
+    inc.type === 'CRASH_ACCIDENT_EMERGENCY' && 
+    (inc.status === 'OPEN' || !inc.status)
+  );
+
   return (
     <div className="live-monitoring-root" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
+      {/* 🚨 CRITICAL CRASH & ACCIDENT EMERGENCY BANNER */}
+      {activeCrashIncidents.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(90deg, #991B1B 0%, #DC2626 50%, #7F1D1D 100%)',
+          border: '2px solid #F87171',
+          borderRadius: 12,
+          padding: '0.9rem 1.25rem',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: '#FFF',
+          boxShadow: '0 0 25px rgba(239, 68, 68, 0.6)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <span style={{ fontSize: '1.8rem' }}>🚨</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <b style={{ fontSize: '1rem', letterSpacing: 0.5, color: '#FEF2F2' }}>
+                  CRITICAL CRASH / IMPACT ALERT ({activeCrashIncidents.length} INCIDENT DETECTED)
+                </b>
+                <span style={{ background: '#7F1D1D', border: '1px solid #FECACA', padding: '1px 8px', borderRadius: 4, fontSize: '0.72rem', fontWeight: 800 }}>
+                  EMERGENCY DISPATCH
+                </span>
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#FEE2E2', marginTop: 2 }}>
+                {activeCrashIncidents.map(inc => {
+                  const driver = drivers.find(d => d.id === inc.driverId);
+                  return `${inc.bikeRegistration || 'Bike'} (Driver: ${driver?.fullName || inc.driverId} • Impact: ${inc.gForce || 'High'}G • Speed: ${inc.speedAtImpact || 0} km/h)`;
+                }).join(' • ')}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+            {activeCrashIncidents[0]?.photoUrl && (
+              <button
+                className="btn btn-sm"
+                style={{ background: '#FFF', color: '#991B1B', fontWeight: 800, border: 'none' }}
+                onClick={() => {
+                  const inc = activeCrashIncidents[0];
+                  setActiveSafetyInspection({
+                    id: inc.id || `CRASH_${Date.now()}`,
+                    driverName: inc.driverName || 'Driver',
+                    bikeRegistration: inc.bikeRegistration || 'Assigned Bike',
+                    cameraFacing: 'front',
+                    triggerType: 'CRASH_DETECTED',
+                    status: 'CAPTURED',
+                    photoUrl: inc.photoUrl,
+                    capturedAt: inc.timestamp,
+                    telemetry: {
+                      speed: inc.speedAtImpact,
+                      gForce: inc.gForce,
+                      latitude: inc.location?.latitude,
+                      longitude: inc.location?.longitude
+                    }
+                  });
+                }}
+              >
+                📸 View Crash Photo
+              </button>
+            )}
+            <button
+              className="btn btn-sm"
+              style={{ background: '#000', color: '#FFF', border: '1px solid rgba(255,255,255,0.4)', fontWeight: 700 }}
+              onClick={() => {
+                const inc = activeCrashIncidents[0];
+                const matchedDriver = drivers.find(d => d.id === inc.driverId);
+                if (matchedDriver) setSelectedDriver(matchedDriver);
+              }}
+            >
+              📍 Track on Map
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(255,255,255,0.2)', color: '#FFF', border: '1px solid rgba(255,255,255,0.5)', fontSize: '0.74rem' }}
+              onClick={async () => {
+                const inc = activeCrashIncidents[0];
+                try {
+                  await updateDoc(doc(db, 'incidents', inc.id), {
+                    status: 'RESOLVED',
+                    resolvedAt: new Date().toISOString()
+                  });
+                  if (inc.driverId) {
+                    await updateDoc(doc(db, 'drivers', inc.driverId), {
+                      'abnormalStopAlert.active': false
+                    });
+                  }
+                } catch (e) {
+                  alert(e.message);
+                }
+              }}
+            >
+              ✓ Mark Safe
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Anti-Absconding Threat Radar Banner (Active during critical breach combinations) */}
       {criticalAlerts.length > 0 && (
         <div style={{
@@ -996,6 +1181,97 @@ export default function LiveMonitoring({ onSelectDriver }) {
         </div>
       </div>
 
+      {/* Real-time Driver Fleet Roster with Live KM Driven Till Now */}
+      <div style={{
+        background: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: 12,
+        padding: '0.75rem 1rem',
+        marginBottom: '0.85rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.5rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', fontWeight: 800, color: '#F59E0B' }}>
+            <Gauge size={16} color="#F59E0B" />
+            <span>LIVE DRIVER FLEET ROSTER &amp; KM DRIVEN ({approvedDrivers.length} Drivers)</span>
+          </div>
+          <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>
+            Watch driver kilometers driven anytime in real time • Click to focus
+          </span>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gap: '0.6rem',
+          maxHeight: 140,
+          overflowY: 'auto',
+          paddingRight: 4
+        }}>
+          {approvedDrivers.map(d => {
+            const loc = d.lastKnownLocation;
+            const spd = loc?.speed || 0;
+            const isMoving = spd > 0;
+            const isSelected = selectedDriver?.id === d.id;
+            const km = d.shiftDistanceKm || 0;
+
+            return (
+              <div
+                key={d.id}
+                onClick={() => setSelectedDriver(d)}
+                style={{
+                  background: isSelected ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${isSelected ? '#F59E0B' : 'rgba(255, 255, 255, 0.08)'}`,
+                  borderRadius: 8,
+                  padding: '0.5rem 0.7rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: isMoving ? '#10B981' : (d.isCurrentlyOnDuty ? '#38BDF8' : '#64748B'),
+                      boxShadow: isMoving ? '0 0 6px #10B981' : 'none'
+                    }} />
+                    <b style={{ color: '#FFF', fontSize: '0.8rem' }}>{d.fullName || 'Driver'}</b>
+                  </div>
+                  <div style={{ fontSize: '0.68rem', color: '#94A3B8' }}>
+                    {d.assignedBikeRegistration || 'No Bike'} • {isMoving ? `⚡ ${spd} km/h` : (d.isCurrentlyOnDuty ? '🟢 On Duty' : '⚪ Off Duty')}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    color: '#34D399',
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    fontSize: '0.78rem',
+                    fontWeight: 800
+                  }}>
+                    📍 {km} km
+                  </div>
+                  <div style={{ fontSize: '0.62rem', color: '#94A3B8', marginTop: 1 }}>
+                    driven till now
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Map + Side Telemetry Panel */}
       <div className="live-monitoring-layout" style={{ display: 'grid', gridTemplateColumns: activeSelectedDriver ? '1fr 340px' : '1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
         <div style={{ height: '100%', minHeight: 500 }}>
@@ -1058,6 +1334,44 @@ export default function LiveMonitoring({ onSelectDriver }) {
                 <div style={{ fontWeight: 700, color: '#F59E0B', fontSize: '0.95rem' }}>
                   {activeSelectedDriver.assignedBikeRegistration || 'Assigned Bike'}
                 </div>
+              </div>
+
+              {/* LIVE KM DRIVEN TILL NOW INSPECTOR */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: 10,
+                padding: '0.85rem 1rem',
+                boxShadow: '0 4px 15px rgba(16, 185, 129, 0.1)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ fontSize: '0.72rem', color: '#6EE7B7', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Gauge size={14} color="#10B981" /> KM DRIVEN TILL NOW
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#A7F3D0', background: 'rgba(16, 185, 129, 0.2)', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
+                    LIVE GPS RADAR
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ fontSize: '1.9rem', fontWeight: 900, color: '#34D399', letterSpacing: -0.5 }}>
+                    {activeSelectedDriver.shiftDistanceKm || 0}
+                  </span>
+                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#A7F3D0' }}>KM</span>
+                  <span style={{ fontSize: '0.74rem', color: '#94A3B8', marginLeft: 'auto' }}>
+                    traveled this shift
+                  </span>
+                </div>
+                {(() => {
+                  const duty = dutySessions.find(ds => ds.id === activeSelectedDriver.currentDutyId || ds.driverId === activeSelectedDriver.id);
+                  const pickupOdo = Number(duty?.pickupOdometer) || null;
+                  const currentEstOdo = pickupOdo ? Math.round(pickupOdo + (activeSelectedDriver.shiftDistanceKm || 0)) : null;
+                  return (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed rgba(16, 185, 129, 0.3)', fontSize: '0.72rem', color: '#CBD5E1', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Pickup ODO: <b>{pickupOdo ? `${pickupOdo} km` : '—'}</b></span>
+                      <span>Est. Current ODO: <b style={{ color: '#FCD34D' }}>{currentEstOdo ? `${currentEstOdo} km` : '—'}</b></span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ 
@@ -1316,6 +1630,123 @@ export default function LiveMonitoring({ onSelectDriver }) {
                   </div>
                 )}
 
+                {/* Real-Time Optical Safety Radar Controls (Front & Rear Cam) */}
+                <div style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  borderRadius: 6,
+                  padding: '0.65rem 0.75rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.4rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.74rem', color: '#38BDF8', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Video size={13} /> LIVE OPTICAL SAFETY RADAR
+                    </span>
+                    <span style={{ fontSize: '0.68rem', color: '#7DD3FC', background: 'rgba(56, 189, 248, 0.2)', padding: '1px 5px', borderRadius: 4 }}>
+                      ON-DEMAND
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#CBD5E1' }}>
+                    Capture instant optical telemetry from vehicle mount without disturbing navigation.
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem', marginTop: 3 }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ 
+                        borderColor: 'rgba(56, 189, 248, 0.5)', 
+                        color: '#38BDF8', 
+                        fontSize: '0.72rem', 
+                        padding: '4px 6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4
+                      }}
+                      onClick={() => handleRequestSafetySnapshot(activeSelectedDriver, 'front')}
+                      disabled={actionLoading?.startsWith('SAFETY_CAM')}
+                      title="Capture front camera snapshot to inspect driver & passenger"
+                    >
+                      {actionLoading === 'SAFETY_CAM_FRONT' ? (
+                        <><Loader2 size={12} className="animate-spin" /> Snapping...</>
+                      ) : (
+                        <><Camera size={12} /> 👤 Front (Passenger)</>
+                      )}
+                    </button>
+
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ 
+                        borderColor: 'rgba(16, 185, 129, 0.5)', 
+                        color: '#34D399', 
+                        fontSize: '0.72rem', 
+                        padding: '4px 6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4
+                      }}
+                      onClick={() => handleRequestSafetySnapshot(activeSelectedDriver, 'back')}
+                      disabled={actionLoading?.startsWith('SAFETY_CAM')}
+                      title="Capture rear camera snapshot to inspect road & surroundings"
+                    >
+                      {actionLoading === 'SAFETY_CAM_BACK' ? (
+                        <><Loader2 size={12} className="animate-spin" /> Snapping...</>
+                      ) : (
+                        <><Eye size={12} /> 🛣️ Rear (Road)</>
+                      )}
+                    </button>
+                  </div>
+
+                  {activeSelectedDriver.lastSafetySnapshot?.photoUrl && (
+                    <div style={{
+                      marginTop: 4,
+                      paddingTop: 4,
+                      borderTop: '1px dashed rgba(56, 189, 248, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.7rem'
+                    }}>
+                      <span style={{ color: '#94A3B8' }}>
+                        Last captured: <b style={{ color: '#E2E8F0' }}>{formatDateTime(activeSelectedDriver.lastSafetySnapshot.capturedAt)}</b>
+                      </span>
+                      <button
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#38BDF8',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '0.7rem',
+                          textDecoration: 'underline'
+                        }}
+                        onClick={() => {
+                          setActiveSafetyInspection({
+                            id: activeSelectedDriver.lastSafetySnapshot.inspectionId || `INSP_PREV`,
+                            driverName: activeSelectedDriver.fullName || 'Driver',
+                            bikeRegistration: activeSelectedDriver.assignedBikeRegistration || 'Assigned Bike',
+                            cameraFacing: activeSelectedDriver.lastSafetySnapshot.cameraFacing || 'front',
+                            triggerType: activeSelectedDriver.lastSafetySnapshot.triggerType || 'PREVIOUS_INSPECTION',
+                            status: 'CAPTURED',
+                            photoUrl: activeSelectedDriver.lastSafetySnapshot.photoUrl,
+                            capturedAt: activeSelectedDriver.lastSafetySnapshot.capturedAt,
+                            telemetry: {
+                              speed: activeSelectedDriver.lastSafetySnapshot.speed || 0,
+                              latitude: activeSelectedDriver.lastKnownLocation?.latitude,
+                              longitude: activeSelectedDriver.lastKnownLocation?.longitude
+                            }
+                          });
+                        }}
+                      >
+                        View Photo 📸
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* 1. Challenge Live Face */}
                 <button
                   className="btn btn-secondary btn-sm"
@@ -1377,6 +1808,242 @@ export default function LiveMonitoring({ onSelectDriver }) {
           </div>
         )}
       </div>
+
+      {/* 📸 REAL-TIME SAFETY SNAPSHOT & OPTICAL TELEMETRY MODAL */}
+      {activeSafetyInspection && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'linear-gradient(145deg, #0F172A 0%, #1E293B 100%)',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            borderRadius: 16,
+            maxWidth: 640,
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(0, 0, 0, 0.2)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '1.3rem' }}>
+                  {activeSafetyInspection.triggerType === 'CRASH_DETECTED' ? '🚨' : '📸'}
+                </span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#FFF' }}>
+                    {activeSafetyInspection.triggerType === 'CRASH_DETECTED' 
+                      ? 'EMERGENCY CRASH SCENE OPTICAL EVIDENCE' 
+                      : `LIVE SAFETY SNAPSHOT (${(activeSafetyInspection.cameraFacing || 'FRONT').toUpperCase()} CAM)`}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#94A3B8' }}>
+                    {activeSafetyInspection.driverName || 'Driver'} • {activeSafetyInspection.bikeRegistration || 'Assigned Bike'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveSafetyInspection(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94A3B8',
+                  fontSize: '1.2rem',
+                  cursor: 'pointer',
+                  padding: '4px 8px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {activeSafetyInspection.status === 'PENDING' ? (
+                <div style={{
+                  padding: '3rem 1.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '1rem',
+                  textAlign: 'center'
+                }}>
+                  <div style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: '50%',
+                    border: '3px solid rgba(56, 189, 248, 0.2)',
+                    borderTopColor: '#38BDF8',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  <div>
+                    <b style={{ color: '#38BDF8', fontSize: '1rem' }}>
+                      Transmitting Optical Command to Vehicle Mount...
+                    </b>
+                    <div style={{ color: '#94A3B8', fontSize: '0.8rem', marginTop: 4 }}>
+                      Vehicle camera sensor capturing frame and uploading secure telemetry via 4G.
+                    </div>
+                  </div>
+                </div>
+              ) : activeSafetyInspection.photoUrl ? (
+                <div>
+                  {/* Photo Container */}
+                  <div style={{
+                    position: 'relative',
+                    borderRadius: 12,
+                    overflow: 'hidden',
+                    background: '#000',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    maxHeight: 380,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <img
+                      src={activeSafetyInspection.photoUrl}
+                      alt="Fleet Safety Snapshot"
+                      style={{
+                        width: '100%',
+                        maxHeight: 380,
+                        objectFit: 'contain'
+                      }}
+                    />
+                    {/* Timestamp & Speed Stamp on Photo */}
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 8,
+                      left: 8,
+                      background: 'rgba(0, 0, 0, 0.75)',
+                      backdropFilter: 'blur(4px)',
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: '0.72rem',
+                      color: '#FFF',
+                      fontFamily: 'monospace'
+                    }}>
+                      🕒 {formatDateTime(activeSafetyInspection.capturedAt)} • ⚡ {activeSafetyInspection.telemetry?.speed || 0} KM/H
+                    </div>
+                  </div>
+
+                  {/* Telemetry Grid */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '0.5rem',
+                    marginTop: '0.75rem'
+                  }}>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.5rem', borderRadius: 8, textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', display: 'block' }}>Speed At Capture</span>
+                      <b style={{ color: (activeSafetyInspection.telemetry?.speed || 0) > 0 ? '#10B981' : '#CBD5E1', fontSize: '0.9rem' }}>
+                        {activeSafetyInspection.telemetry?.speed || 0} km/h
+                      </b>
+                    </div>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.5rem', borderRadius: 8, textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', display: 'block' }}>Active Gig App</span>
+                      <b style={{ color: '#F59E0B', fontSize: '0.85rem' }}>
+                        {activeSafetyInspection.telemetry?.activeGigApp || 'IN TRANSIT'}
+                      </b>
+                    </div>
+                    <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.5rem', borderRadius: 8, textAlign: 'center' }}>
+                      <span style={{ fontSize: '0.68rem', color: '#94A3B8', display: 'block' }}>GPS Coordinates</span>
+                      {activeSafetyInspection.telemetry?.latitude ? (
+                        <a
+                          href={`https://maps.google.com/?q=${activeSafetyInspection.telemetry.latitude},${activeSafetyInspection.telemetry.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: '#38BDF8', fontSize: '0.75rem', textDecoration: 'underline' }}
+                        >
+                          View Pin 📍
+                        </a>
+                      ) : (
+                        <b style={{ color: '#94A3B8', fontSize: '0.8rem' }}>Acquiring...</b>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '2rem', textAlign: 'center', color: '#F87171' }}>
+                  <b>Capture Failed</b>
+                  <div style={{ fontSize: '0.78rem', color: '#CBD5E1', marginTop: 4 }}>
+                    {activeSafetyInspection.errorMessage || 'Camera sensor was busy or unavailable.'}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{
+              padding: '0.85rem 1.25rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(0, 0, 0, 0.2)'
+            }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {activeSafetyInspection.photoUrl && (
+                  <a
+                    href={activeSafetyInspection.photoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    download={`safety_snapshot_${activeSafetyInspection.driverId}.jpg`}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.75rem', color: '#38BDF8', borderColor: 'rgba(56, 189, 248, 0.4)' }}
+                  >
+                    <Download size={13} /> Save Image
+                  </a>
+                )}
+                {activeSafetyInspection.triggerType !== 'CRASH_DETECTED' && activeSelectedDriver && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '0.75rem', color: '#F59E0B', borderColor: 'rgba(245, 158, 11, 0.4)' }}
+                    onClick={async () => {
+                      try {
+                        await logAdminAudit({
+                          driverId: activeSafetyInspection.driverId,
+                          action: 'OFFLINE_PASSENGER_FLAGGED',
+                          notes: `Admin audited optical safety snapshot: Passenger presence confirmed during suspected offline ride.`
+                        });
+                        alert('Audit note logged: Passenger verified on vehicle.');
+                      } catch (e) {
+                        alert(e.message);
+                      }
+                    }}
+                  >
+                    Flag Passenger Ride (Offline Cash Audit)
+                  </button>
+                )}
+              </div>
+
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setActiveSafetyInspection(null)}
+              >
+                Close Inspection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

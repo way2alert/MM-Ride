@@ -187,8 +187,15 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.bikeModelText}>
               {assignedBike ? `${assignedBike.make || 'Hero'} ${assignedBike.model || 'Splendor'}` : 'Hero Splendor Plus'}
             </Text>
-            <Text style={styles.bikeFuelBadge}>
-              ⛽ Fuel Paid by MM Ride
+            <Text style={[
+              styles.bikeFuelBadge,
+              (assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL') && { backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#34D399', borderColor: 'rgba(16, 185, 129, 0.4)' }
+            ]}>
+              {assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL'
+                ? '🟢 CNG & Fuel Paid by MM Ride'
+                : assignedBike?.fuelType === 'EV'
+                ? '⚡ EV Charging Paid by MM Ride'
+                : '⛽ Fuel Paid by MM Ride'}
             </Text>
             {(() => {
               const curOdo = Number(assignedBike?.currentOdometer) || 0;

@@ -1,17 +1,22 @@
 package com.mmride.driver
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.MotionEvent
@@ -39,6 +44,14 @@ class FloatingBubbleService : Service() {
 
     private var badgeTextView: TextView? = null
     private var fareInput: EditText? = null
+    private var platformButtons: List<Button> = emptyList()
+    private var platformSubTextView: TextView? = null
+    private var activeScreenBadge: TextView? = null
+    private var detectedPlatformFromScreen: String? = null
+
+    // Background watcher for active screen detection while compact pill is visible
+    private val detectionHandler = Handler(Looper.getMainLooper())
+    private var detectionRunnable: Runnable? = null
 
     // Urgent Alert Overlay View & State
     private var alertBannerView: LinearLayout? = null
@@ -80,6 +93,7 @@ class FloatingBubbleService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildForegroundNotification())
         createFloatingViews()
+        startPlatformDetectionWatcher()
         isRunning = true
     }
 
@@ -117,6 +131,7 @@ class FloatingBubbleService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopPlatformDetectionWatcher()
         isRunning = false
         bubbleContainer?.let {
             try {
@@ -126,6 +141,145 @@ class FloatingBubbleService : Service() {
             }
         }
         bubbleContainer = null
+    }
+
+    private fun startPlatformDetectionWatcher() {
+        detectionRunnable = object : Runnable {
+            override fun run() {
+                try {
+                    val platform = detectForegroundPlatform()
+                    if (platform != null) {
+                        detectedPlatformFromScreen = platform
+                        updateCompactActiveAppIndicator(platform)
+                    }
+                } catch (_: Exception) {}
+                detectionHandler.postDelayed(this, 2500)
+            }
+        }
+        detectionHandler.postDelayed(detectionRunnable!!, 1000)
+    }
+
+    private fun stopPlatformDetectionWatcher() {
+        detectionRunnable?.let { detectionHandler.removeCallbacks(it) }
+        detectionRunnable = null
+    }
+
+    private fun mapPackageToPlatform(pkgName: String?): String? {
+        if (pkgName == null) return null
+        val pkg = pkgName.lowercase()
+        return when {
+            pkg.contains("ubercab") || pkg.contains("uber.driver") || pkg == "com.ubercab" || pkg.startsWith("com.ubercab.") -> "UBER"
+            pkg.contains("olacabs") || pkg == "com.ola" || pkg.startsWith("com.olacabs.") -> "OLA"
+            pkg.contains("rapido") -> "RAPIDO"
+            else -> null
+        }
+    }
+
+    private fun detectForegroundPlatform(): String? {
+        // 1. Check UsageEvents (most accurate for currently resumed foreground activity)
+        try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            val endTime = System.currentTimeMillis()
+            val beginTime = endTime - 12000L // past 12s
+            val events = usm?.queryEvents(beginTime, endTime)
+            if (events != null) {
+                val event = UsageEvents.Event()
+                var latestEventTime = 0L
+                var detectedPlatform: String? = null
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                        val mapped = mapPackageToPlatform(event.packageName)
+                        if (mapped != null && event.timeStamp >= latestEventTime) {
+                            latestEventTime = event.timeStamp
+                            detectedPlatform = mapped
+                        }
+                    }
+                }
+                if (detectedPlatform != null) {
+                    return detectedPlatform
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Check UsageStats by lastTimeUsed
+        try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            val endTime = System.currentTimeMillis()
+            val beginTime = endTime - 60000L // past 60s
+            val statsList = usm?.queryUsageStats(UsageStatsManager.INTERVAL_BEST, beginTime, endTime)
+            if (!statsList.isNullOrEmpty()) {
+                val matchedStat = statsList
+                    .filter { mapPackageToPlatform(it.packageName) != null }
+                    .maxByOrNull { it.lastTimeUsed }
+                if (matchedStat != null && (endTime - matchedStat.lastTimeUsed) < 30000L) {
+                    return mapPackageToPlatform(matchedStat.packageName)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Fallback: ActivityManager runningAppProcesses
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val processes = am?.runningAppProcesses
+            if (processes != null) {
+                for (proc in processes) {
+                    if (proc.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+                        val mapped = mapPackageToPlatform(proc.processName)
+                        if (mapped != null) return mapped
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 4. Fallback: ActivityManager getRunningTasks
+        try {
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            @Suppress("DEPRECATION")
+            val tasks = am?.getRunningTasks(5)
+            if (tasks != null) {
+                for (task in tasks) {
+                    val pkg = task.topActivity?.packageName
+                    val mapped = mapPackageToPlatform(pkg)
+                    if (mapped != null) return mapped
+                }
+            }
+        } catch (_: Exception) {}
+
+        return null
+    }
+
+    private fun updateCompactActiveAppIndicator(platform: String) {
+        activeScreenBadge?.post {
+            activeScreenBadge?.visibility = View.VISIBLE
+            when (platform) {
+                "UBER" -> {
+                    activeScreenBadge?.text = "🚗 UBER"
+                    activeScreenBadge?.setTextColor(Color.WHITE)
+                    activeScreenBadge?.background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#000000"))
+                        setStroke(dp(1), Color.parseColor("#F59E0B"))
+                        cornerRadius = dp(8).toFloat()
+                    }
+                }
+                "OLA" -> {
+                    activeScreenBadge?.text = "🚕 OLA"
+                    activeScreenBadge?.setTextColor(Color.BLACK)
+                    activeScreenBadge?.background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#EAB308"))
+                        cornerRadius = dp(8).toFloat()
+                    }
+                }
+                "RAPIDO" -> {
+                    activeScreenBadge?.text = "🛵 RAPIDO"
+                    activeScreenBadge?.setTextColor(Color.BLACK)
+                    activeScreenBadge?.background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#FACC15"))
+                        cornerRadius = dp(8).toFloat()
+                    }
+                }
+            }
+        }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -229,8 +383,8 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = dp(16)
+            gravity = Gravity.TOP or Gravity.END
+            x = dp(0)
             y = dp(180)
         }
 
@@ -239,7 +393,7 @@ class FloatingBubbleService : Service() {
             orientation = LinearLayout.VERTICAL
         }
 
-        // 1. COMPACT DRAGGABLE PILL
+        // 1. COMPACT DRAGGABLE PILL (Docked on Right Edge)
         compactView = createCompactPillView()
         // 2. EXPANDED QUICK LOGGER CARD
         expandedView = createExpandedCardView()
@@ -258,18 +412,19 @@ class FloatingBubbleService : Service() {
     }
 
     /**
-     * Compact floating pill view (Moves anywhere on screen, shows icon & ride count)
+     * Compact floating pill view (Docked on right side, vertical movable only, proper opacity & brand color)
      */
     private fun createCompactPillView(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(14), dp(10), dp(16), dp(10))
+            alpha = 0.88f // Sleek translucent resting opacity
 
-            // Background drawable with MM Ride Gold border
+            // Background drawable with MM Ride Emerald & Obsidian styling
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#0A0D14"))
-                setStroke(dp(2), Color.parseColor("#F59E0B"))
+                setColor(Color.parseColor("#E60A0D14")) // 90% opacity deep obsidian navy
+                setStroke(dp(2), Color.parseColor("#10B981")) // Emerald brand accent border
                 cornerRadius = dp(24).toFloat()
             }
 
@@ -282,14 +437,14 @@ class FloatingBubbleService : Service() {
             // MM RIDE Title
             addView(TextView(this@FloatingBubbleService).apply {
                 text = " MM RIDE "
-                setTextColor(Color.parseColor("#F59E0B"))
+                setTextColor(Color.parseColor("#10B981"))
                 textSize = 12f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             })
 
             // Badge Pill (Ride count / Earnings)
             badgeTextView = TextView(this@FloatingBubbleService).apply {
-                text = "$totalRides rides"
+                text = if (totalRides > 0) "$totalRides • ₹${totalEarnings.toInt()}" else "0 rides"
                 setTextColor(Color.BLACK)
                 textSize = 11f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -300,6 +455,22 @@ class FloatingBubbleService : Service() {
                 }
             }
             addView(badgeTextView)
+
+            // Detected Active Foreground App Badge (Auto changes as driver switches between Ola, Uber, Rapido)
+            activeScreenBadge = TextView(this@FloatingBubbleService).apply {
+                visibility = View.GONE
+                textSize = 10f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setPadding(dp(6), dp(2), dp(6), dp(2))
+                val marginL = dp(4)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(marginL, 0, 0, 0)
+                }
+            }
+            addView(activeScreenBadge)
         }
     }
 
@@ -356,6 +527,7 @@ class FloatingBubbleService : Service() {
             textSize = 11f
             setPadding(0, dp(2), 0, dp(12))
         }
+        platformSubTextView = subTextView
         card.addView(subTextView)
 
         // 3 Platform Selector Buttons
@@ -364,28 +536,15 @@ class FloatingBubbleService : Service() {
             setPadding(0, 0, 0, dp(12))
         }
 
-        val olaBtn = createPlatformButton("OLA", "🚕 Ola", true)
-        val uberBtn = createPlatformButton("UBER", "🚗 Uber", false)
-        val rapidoBtn = createPlatformButton("RAPIDO", "🛵 Rapido", false)
+        val olaBtn = createPlatformButton("OLA", "🚕 Ola", selectedPlatform == "OLA")
+        val uberBtn = createPlatformButton("UBER", "🚗 Uber", selectedPlatform == "UBER")
+        val rapidoBtn = createPlatformButton("RAPIDO", "🛵 Rapido", selectedPlatform == "RAPIDO")
 
-        val buttons = listOf(olaBtn, uberBtn, rapidoBtn)
+        platformButtons = listOf(olaBtn, uberBtn, rapidoBtn)
 
-        val updatePlatformSelection = { selected: String ->
-            selectedPlatform = selected
-            for (btn in buttons) {
-                val isSel = (btn.tag == selected)
-                btn.background = GradientDrawable().apply {
-                    setColor(if (isSel) Color.parseColor("#F59E0B") else Color.parseColor("#161F33"))
-                    setStroke(dp(1), if (isSel) Color.parseColor("#F59E0B") else Color.parseColor("#334155"))
-                    cornerRadius = dp(8).toFloat()
-                }
-                btn.setTextColor(if (isSel) Color.BLACK else Color.WHITE)
-            }
-        }
-
-        olaBtn.setOnClickListener { updatePlatformSelection("OLA") }
-        uberBtn.setOnClickListener { updatePlatformSelection("UBER") }
-        rapidoBtn.setOnClickListener { updatePlatformSelection("RAPIDO") }
+        olaBtn.setOnClickListener { selectPlatform("OLA", isAutoDetected = false) }
+        uberBtn.setOnClickListener { selectPlatform("UBER", isAutoDetected = false) }
+        rapidoBtn.setOnClickListener { selectPlatform("RAPIDO", isAutoDetected = false) }
 
         platformRow.addView(olaBtn)
         platformRow.addView(uberBtn)
@@ -564,13 +723,51 @@ class FloatingBubbleService : Service() {
         collapseCard()
     }
 
+    private fun selectPlatform(selected: String, isAutoDetected: Boolean) {
+        selectedPlatform = selected
+        for (btn in platformButtons) {
+            val isSel = (btn.tag == selected)
+            btn.background = GradientDrawable().apply {
+                setColor(if (isSel) Color.parseColor("#F59E0B") else Color.parseColor("#161F33"))
+                setStroke(dp(1), if (isSel) Color.parseColor("#F59E0B") else Color.parseColor("#334155"))
+                cornerRadius = dp(8).toFloat()
+            }
+            btn.setTextColor(if (isSel) Color.BLACK else Color.WHITE)
+        }
+
+        platformSubTextView?.let { sub ->
+            if (isAutoDetected) {
+                val label = when (selected) {
+                    "UBER" -> "🚗 Uber Driver"
+                    "OLA" -> "🚕 Ola Partner"
+                    "RAPIDO" -> "🛵 Rapido Captain"
+                    else -> selected
+                }
+                sub.text = "🎯 Auto-Detected Active App: $label"
+                sub.setTextColor(Color.parseColor("#34D399")) // Bright Emerald
+                sub.setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+            } else {
+                sub.text = "Direct entry while running Ola, Uber or Rapido"
+                sub.setTextColor(Color.parseColor("#64748B"))
+                sub.setTypeface(android.graphics.Typeface.DEFAULT)
+            }
+        }
+    }
+
     private fun expandCard() {
         val wm = windowManager ?: return
         val params = bubbleParams ?: return
 
+        // Auto-detect which ride app driver is currently viewing right now
+        val active = detectForegroundPlatform() ?: detectedPlatformFromScreen ?: "OLA"
+        selectPlatform(active, isAutoDetected = true)
+
         compactView?.visibility = View.GONE
         expandedView?.visibility = View.VISIBLE
+        expandedView?.alpha = 1.0f
 
+        // Dock expanded card cleanly on right side
+        params.x = dp(12)
         // Make window focusable so keyboard appears for entering fare
         params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         wm.updateViewLayout(bubbleContainer, params)
@@ -582,7 +779,9 @@ class FloatingBubbleService : Service() {
 
         expandedView?.visibility = View.GONE
         compactView?.visibility = View.VISIBLE
+        compactView?.alpha = 0.88f // Restore resting opacity
 
+        params.x = dp(0) // Locked to right edge
         // Return to non-focusable so driver touches underlying Ola/Uber app smoothly
         params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         wm.updateViewLayout(bubbleContainer, params)
@@ -724,10 +923,12 @@ class FloatingBubbleService : Service() {
 
         // Restore normal pill
         compactView?.background = GradientDrawable().apply {
-            setColor(Color.parseColor("#0A0D14"))
-            setStroke(dp(2), Color.parseColor("#F59E0B"))
+            setColor(Color.parseColor("#E60A0D14"))
+            setStroke(dp(2), Color.parseColor("#10B981"))
             cornerRadius = dp(24).toFloat()
         }
+        compactView?.alpha = 0.88f
+        params.x = dp(0)
 
         badgeTextView?.apply {
             text = if (totalRides > 0) "$totalRides • ₹${totalEarnings.toInt()}" else "0 rides"
@@ -759,9 +960,7 @@ class FloatingBubbleService : Service() {
 
     private fun attachTouchDragListener(view: View) {
         view.setOnTouchListener(object : View.OnTouchListener {
-            private var initialX = 0
             private var initialY = 0
-            private var initialTouchX = 0f
             private var initialTouchY = 0f
             private var isDragging = false
 
@@ -771,35 +970,49 @@ class FloatingBubbleService : Service() {
 
                 when (event?.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
                         initialY = params.y
-                        initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         isDragging = false
+                        // Turn full opacity on touch/interaction
+                        compactView?.alpha = 1.0f
+
+                        // Pre-sample foreground screen as soon as driver touches bubble
+                        val detected = detectForegroundPlatform()
+                        if (detected != null) {
+                            detectedPlatformFromScreen = detected
+                            updateCompactActiveAppIndicator(detected)
+                        }
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        val dx = (event.rawX - initialTouchX).toInt()
                         val dy = (event.rawY - initialTouchY).toInt()
 
-                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                        if (Math.abs(dy) > 10) {
                             isDragging = true
                         }
 
                         if (isDragging) {
-                            params.x = initialX + dx
-                            params.y = initialY + dy
+                            val screenHeight = resources.displayMetrics.heightPixels
+                            val minY = dp(40)
+                            val maxY = screenHeight - dp(140)
+                            // MOVABLE STRICTLY FROM TOP TO BOTTOM (X locked to right edge)
+                            params.x = dp(0)
+                            params.y = Math.max(minY, Math.min(maxY, initialY + dy))
                             wm.updateViewLayout(bubbleContainer, params)
                         }
                         return true
                     }
-                    MotionEvent.ACTION_UP -> {
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         if (!isDragging) {
+                            // Clicked/Tapped without drag -> Open view with proper opacity
                             if (hasActiveAlert) {
                                 launchAppToFront()
                             } else {
                                 expandCard()
                             }
+                        } else {
+                            // Finished dragging -> Restore resting opacity
+                            compactView?.alpha = 0.88f
                         }
                         return true
                     }

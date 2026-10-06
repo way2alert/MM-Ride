@@ -156,7 +156,13 @@ export default function RegistrationScreen({ navigation }) {
         form.emergencyContactPhone ||
         '';
 
-      await registerDriverProfile(currentUser.uid, {
+      const effectiveDriverId = currentUser?.uid || auth?.currentUser?.uid || driverProfile?.id;
+      if (!effectiveDriverId) {
+        Alert.alert('Session Expired', 'Driver authentication session is missing. Please sign in again.');
+        return;
+      }
+
+      await registerDriverProfile(effectiveDriverId, {
         fullName: trimmedName,
         dlNumber: trimmedDl,
         currentAddress: trimmedAddress,
@@ -176,7 +182,7 @@ export default function RegistrationScreen({ navigation }) {
         consentAgreedAt: new Date().toISOString()
       });
 
-      await submitDriverAddress(currentUser.uid, {
+      await submitDriverAddress(effectiveDriverId, {
         currentAddress: trimmedAddress,
         permanentAddress: trimmedAddress
       });
@@ -369,7 +375,7 @@ export default function RegistrationScreen({ navigation }) {
             • <Text style={styles.boldText}>50/50 Ride Split:</Text> Daily 50% net earnings paid out via UPI every evening.
           </Text>
           <Text style={styles.bulletItem}>
-            • <Text style={styles.boldText}>Zero Fuel Cost:</Text> Vehicle petrol & maintenance paid 100% by owner.
+            • <Text style={styles.boldText}>50/50 Shared Fuel:</Text> Petrol and CNG is shared 50% Owner and 50% Driver. Maintenance is 100% Owner covered.
           </Text>
           <Text style={styles.bulletItem}>
             • <Text style={styles.boldText}>Shift Safety GPS:</Text> Location monitored strictly during active duty hours.
@@ -424,9 +430,9 @@ export default function RegistrationScreen({ navigation }) {
                 Every day, your total net earnings from Ola, Uber, and Rapido platforms are split equally (50% to Driver, 50% to Fleet). Settled directly to your UPI ID every evening with zero hidden deductions.
               </Text>
 
-              <Text style={styles.clauseHeading}>2. Zero Fuel & Zero Maintenance</Text>
+              <Text style={styles.clauseHeading}>2. 50/50 Shared Fuel (Petrol & CNG) & Fleet Maintenance</Text>
               <Text style={styles.clauseText}>
-                All vehicle expenses including petrol, EV battery charging, periodic oil changes, and tire maintenance are 100% covered by the MM Ride fleet. You do not pay anything from your pocket.
+                Shift fuel expenses (Petrol and CNG) are shared equally (50% Fleet Owner, 50% Driver). Periodic oil changes, insurance, and routine mechanical maintenance are 100% covered by MM Ride.
               </Text>
 
               <Text style={styles.clauseHeading}>3. Vehicle Allocation & Care</Text>

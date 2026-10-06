@@ -52,7 +52,7 @@ export default function LeaveScreen({ navigation }) {
     setLoading(true);
     try {
       await submitDriverLeave({
-        driverId: currentUser.uid,
+        driverId: currentUser?.uid || auth?.currentUser?.uid,
         startDate,
         durationDays: Number(durationDays),
         reason: isEmergency ? `[EMERGENCY LEAVE] ${reason}` : reason

@@ -176,7 +176,7 @@ export default function RidesRadar({ onSelectDriver }) {
       await addDoc(collection(db, 'platformRideEvents'), {
         driverId,
         dutyId: activeDuty?.id || null,
-        bikeId: targetDriver?.assignedBikeId || 'bike-dl9sbh6153',
+        bikeId: targetDriver?.assignedBikeId || null,
         platform,
         packageName: platform === 'UBER' ? 'com.ubercab.driver' : platform === 'OLA' ? 'com.olacabs.partner' : 'com.rapido.rider',
         title: `${platform} Captain`,
@@ -572,11 +572,11 @@ export default function RidesRadar({ onSelectDriver }) {
                         onClick={() => driver && onSelectDriver && onSelectDriver(driver)}
                         title="Click to view driver 360 profile"
                       >
-                        <span>{driver?.fullName || item.driverName || 'Shivkumar (Driver)'}</span>
+                        <span>{driver?.fullName || item.driverName || 'Driver'}</span>
                         {driver && <ArrowUpRight size={13} color="#60A5FA" />}
                       </div>
                       <div style={{ fontSize: '0.73rem', color: '#94A3B8', marginTop: 2 }}>
-                        📞 {driver?.mobileNumber || 'N/A'} • <span style={{ color: '#F59E0B' }}>🏍️ {bike?.registrationNumber || driver?.assignedBikeRegistration || 'DL9SBH6153'}</span>
+                        📞 {driver?.mobileNumber || 'N/A'} • <span style={{ color: (bike?.registrationNumber || driver?.assignedBikeRegistration) ? '#F59E0B' : '#64748B' }}>🏍️ {bike?.registrationNumber || driver?.assignedBikeRegistration || 'No Bike Assigned'}</span>
                       </div>
                     </td>
 

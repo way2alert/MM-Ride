@@ -133,3 +133,26 @@ export async function dismissOverlayAlert() {
   }
 }
 
+/**
+ * Checks if Android Usage Stats permission is granted for automatic app detection.
+ */
+export async function hasUsageStatsPermission() {
+  if (Platform.OS !== 'android' || !FloatingBubbleModule?.hasUsageStatsPermission) return false;
+  try {
+    return await FloatingBubbleModule.hasUsageStatsPermission();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Opens Android settings so user/admin can grant Usage Access if not already granted via MDM.
+ */
+export async function requestUsageStatsPermission() {
+  if (Platform.OS !== 'android' || !FloatingBubbleModule?.requestUsageStatsPermission) return false;
+  try {
+    return await FloatingBubbleModule.requestUsageStatsPermission();
+  } catch {
+    return false;
+  }
+}

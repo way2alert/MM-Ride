@@ -23,8 +23,8 @@ export default function EmergencySOSScreen({ navigation }) {
     setLoading(true);
     try {
       await submitEmergencyIncident({
-        driverId: currentUser.uid,
-        bikeId: driverProfile.assignedBikeId || assignedBike?.id,
+        driverId: currentUser?.uid || driverProfile?.id,
+        bikeId: driverProfile?.assignedBikeId || assignedBike?.id || null,
         type: 'EMERGENCY_SOS_PANIC',
         description: 'Driver triggered immediate Emergency SOS panic button.',
         gps: currentLocation ? {

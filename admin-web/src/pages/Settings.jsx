@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, ShieldAlert, MessageSquare, QrCode, Smartphone, ExternalLink, CheckCircle } from 'lucide-react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Settings as SettingsIcon, Save, ShieldAlert, MessageSquare, QrCode, Smartphone, ExternalLink, CheckCircle, Trash2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, writeBatch, query, limit } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { logAdminAudit } from '../firebase/services';
 import Modal from '../components/Modal';
@@ -23,6 +23,13 @@ export default function Settings({ setTab }) {
   const [saved, setSaved] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrUrl, setQrUrl] = useState('');
+
+  // Database Purge / Clean Tool State
+  const [showCleanModal, setShowCleanModal] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanProgress, setCleanProgress] = useState('');
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
+  const [preserveHubs, setPreserveHubs] = useState(true);
 
   useEffect(() => {
     if (showQrModal) {
@@ -94,6 +101,76 @@ export default function Settings({ setTab }) {
       alert(`Error saving settings: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePurgeDatabase = async () => {
+    if (confirmDeleteText.trim() !== 'DELETE') {
+      alert("Please type 'DELETE' in all caps to confirm.");
+      return;
+    }
+    setCleaning(true);
+    setCleanProgress('Starting database purge...');
+
+    const collectionsToPurge = [
+      'driver_app_crashes',
+      'drivers',
+      'driverDocuments',
+      'driverDevices',
+      'bikes',
+      'bikeAssignments',
+      'bikeHandovers',
+      'bikeReturns',
+      'dutySessions',
+      'gpsEvents',
+      'speedEvents',
+      'idleAlerts',
+      'shiftRideEntries',
+      'platformRideEvents',
+      'fuelExpenses',
+      'incidents',
+      'challans',
+      'bikeMaintenanceLogs',
+      'adminAudits',
+      'leaveRequests',
+      'settlementTransactions',
+      'dailyDriverSummaries',
+      'settlementReports',
+      'mdmTelemetry',
+      ...(preserveHubs ? [] : ['hubs'])
+    ];
+
+    let totalDeleted = 0;
+    try {
+      for (const collName of collectionsToPurge) {
+        setCleanProgress(`Purging collection: ${collName}...`);
+        let hasMore = true;
+        while (hasMore) {
+          const q = query(collection(db, collName), limit(300));
+          const snap = await getDocs(q);
+          if (snap.empty) {
+            hasMore = false;
+            break;
+          }
+          const batch = writeBatch(db);
+          snap.docs.forEach(docSnap => batch.delete(docSnap.ref));
+          await batch.commit();
+          totalDeleted += snap.size;
+          setCleanProgress(`Deleted ${totalDeleted} records so far... (${collName})`);
+          if (snap.size < 300) {
+            hasMore = false;
+          }
+        }
+      }
+      setCleanProgress(`Purge complete! Total deleted: ${totalDeleted} documents. adminUsers & settings were preserved.`);
+      alert(`✅ Success: ${totalDeleted} documents deleted across test collections.\n\n'adminUsers' and 'settings' were preserved untouched!`);
+      setShowCleanModal(false);
+      setConfirmDeleteText('');
+    } catch (err) {
+      console.error("Purge error:", err);
+      alert(`Error during purge: ${err.message}`);
+    } finally {
+      setCleaning(false);
     }
   };
 
@@ -479,6 +556,53 @@ export default function Settings({ setTab }) {
         </div>
       </div>
 
+      {/* 4. Danger Zone: Database Reset & Purge Utility */}
+      <div className="panel" style={{ maxWidth: 800, marginTop: '1.5rem', border: '1px solid rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.04)' }}>
+        <div className="panel-header" style={{ borderBottom: '1px solid rgba(239, 68, 68, 0.2)' }}>
+          <div className="panel-title" style={{ color: '#F87171' }}>
+            <Trash2 size={18} color="#EF4444" />
+            <span>Danger Zone: Database Purge & Test Data Reset</span>
+          </div>
+          <span className="badge badge-danger">Permanent Action</span>
+        </div>
+
+        <div style={{ padding: '1rem', fontSize: '0.86rem', color: '#CBD5E1', lineHeight: 1.6 }}>
+          <p style={{ margin: '0 0 0.8rem 0' }}>
+            Clean up all mock testing data, crash logs in <code>driver_app_crashes</code>, dummy shift sessions, and driver records.
+          </p>
+          <div style={{ background: 'rgba(0, 0, 0, 0.25)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ fontWeight: 700, color: '#10B981', marginBottom: 4 }}>
+              🛡️ Guaranteed Untouched & Protected:
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
+              • <code>adminUsers</code> (Your login credentials are secure)<br />
+              • <code>settings</code> (All system policy rules & split configurations remain intact)<br />
+              • <code>hubs</code> (Depot coordinates preserved by default)
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              setConfirmDeleteText('');
+              setShowCleanModal(true);
+            }}
+            style={{
+              borderColor: 'rgba(239, 68, 68, 0.5)',
+              color: '#F87171',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}
+          >
+            <Trash2 size={16} /> Clean Firestore Collections (Keep adminUsers & settings)
+          </button>
+        </div>
+      </div>
+
       {/* 6-Tap Device Owner QR Code Modal */}
       <Modal
         isOpen={showQrModal}
@@ -552,6 +676,80 @@ export default function Settings({ setTab }) {
               <div>• Developer USB Mode Blocked</div>
             </div>
           </div>
+        </div>
+      </Modal>
+
+      {/* Database Purge Confirmation Modal */}
+      <Modal
+        isOpen={showCleanModal}
+        onClose={() => !cleaning && setShowCleanModal(false)}
+        title="⚠️ Confirm Database Cleanup & Purge"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={cleaning}
+              onClick={() => setShowCleanModal(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={cleaning || confirmDeleteText.trim() !== 'DELETE'}
+              onClick={handlePurgeDatabase}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
+            >
+              {cleaning ? <RefreshCw size={16} className="spin" /> : <Trash2 size={16} />}
+              {cleaning ? 'Purging Firestore...' : 'Permanently Delete Collections'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ padding: '0.5rem 0' }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: '0.9rem', marginBottom: '1rem', color: '#FCA5A5' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={18} color="#EF4444" /> Irreversible Operation
+            </div>
+            <div style={{ fontSize: '0.78rem', lineHeight: 1.5 }}>
+              This will permanently delete all records across: <strong>driver_app_crashes, drivers, driverDocuments, driverDevices, bikes, bikeAssignments, bikeHandovers, bikeReturns, dutySessions, gpsEvents, speedEvents, idleAlerts, shiftRideEntries, platformRideEvents, fuelExpenses, incidents, challans, settlements</strong>.
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '1rem', fontSize: '0.82rem', color: '#CBD5E1' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={preserveHubs}
+                disabled={cleaning}
+                onChange={(e) => setPreserveHubs(e.target.checked)}
+              />
+              <span>Preserve Hubs / Depots collection (sitapuri, central, etc.)</span>
+            </label>
+          </div>
+
+          {cleaning ? (
+            <div style={{ padding: '1.5rem', textAlign: 'center', background: 'rgba(0,0,0,0.3)', borderRadius: 8 }}>
+              <RefreshCw size={24} color="#F59E0B" className="spin" style={{ margin: '0 auto 0.75rem auto', display: 'block' }} />
+              <div style={{ fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>Purge In Progress...</div>
+              <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>{cleanProgress}</div>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontSize: '0.82rem', color: '#94A3B8', marginBottom: '0.5rem' }}>
+                To prevent accidental deletion, please type <strong style={{ color: '#EF4444' }}>DELETE</strong> in the box below:
+              </p>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Type DELETE to confirm"
+                value={confirmDeleteText}
+                onChange={(e) => setConfirmDeleteText(e.target.value)}
+                style={{ borderColor: confirmDeleteText === 'DELETE' ? '#EF4444' : undefined }}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     </div>

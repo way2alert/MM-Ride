@@ -25,6 +25,8 @@ export default function EndDutyScreen({ navigation }) {
   const [returnOdometer, setReturnOdometer] = useState(startOdo > 0 ? String(startOdo) : '');
   const [fuelCharge, setFuelCharge] = useState('');
   const [condition, setCondition] = useState('GOOD');
+  const isCng = assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL';
+  const isEv = assignedBike?.fuelType === 'EV';
   const [hasDamage, setHasDamage] = useState(false);
   const [damageNotes, setDamageNotes] = useState('');
   const [keysReturned, setKeysReturned] = useState(false);
@@ -88,7 +90,9 @@ export default function EndDutyScreen({ navigation }) {
         } : null,
         returnOdometer: returnOdoNum,
         returnFuelCharge: Number(fuelCharge) || 0,
-        returnFuelLitres: Number(fuelCharge) || 0,
+        returnFuelLitres: !isCng ? (Number(fuelCharge) || 0) : 0,
+        returnFuelKg: isCng ? (Number(fuelCharge) || 0) : 0,
+        fuelType: assignedBike?.fuelType || 'PETROL',
         bikeCondition: condition || 'GOOD',
         damageReported: Boolean(hasDamage),
         damageNotes: damageNotes || '',
@@ -258,15 +262,23 @@ export default function EndDutyScreen({ navigation }) {
           onChangeText={setReturnOdometer}
         />
 
-        <Text style={styles.label}>How many litres petrol (Remaining in tank) *</Text>
+        <Text style={styles.label}>
+          {isCng 
+            ? 'Remaining CNG in tank (kg) *' 
+            : isEv 
+            ? 'Remaining Battery Charge (%) *' 
+            : 'How many litres petrol (Remaining in tank) *'}
+        </Text>
         <View style={styles.fuelPresetsRow}>
-          {['1', '2', '3', '5'].map(val => (
+          {(isCng ? ['0.5', '1.0', '1.5', '2.0'] : isEv ? ['25', '50', '75', '100'] : ['1', '2', '3', '5']).map(val => (
             <TouchableOpacity
               key={val}
               style={[styles.fuelPresetPill, fuelCharge === val && styles.fuelPresetPillActive]}
               onPress={() => setFuelCharge(val)}
             >
-              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>{val} L</Text>
+              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>
+                {val} {isCng ? 'kg' : isEv ? '%' : 'L'}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -275,7 +287,7 @@ export default function EndDutyScreen({ navigation }) {
           keyboardType="decimal-pad"
           value={fuelCharge}
           onChangeText={setFuelCharge}
-          placeholder="Enter litres (e.g. 2.5)"
+          placeholder={isCng ? 'Enter CNG in kg (e.g. 1.2)' : isEv ? 'Enter battery % (e.g. 75)' : 'Enter litres (e.g. 2.5)'}
           placeholderTextColor="#64748B"
         />
 

@@ -11,6 +11,9 @@ import { startMdmDeviceTelemetry, stopMdmDeviceTelemetry, getHardwareDeviceId, g
 import MdmKioskOverlay from '../components/MdmKioskOverlay';
 import PrivacyNoticeModal from '../components/PrivacyNoticeModal';
 import GlobalSecurityOverlay from '../components/GlobalSecurityOverlay';
+import SafetyCameraHost from '../components/SafetyCameraHost';
+import { startSafetyInspectionListener } from '../services/safetyCamService';
+import { startCrashMonitoring, stopCrashMonitoring } from '../services/crashDetectionService';
 import { startFloatingBubble, stopFloatingBubble, updateBubbleStats, subscribeToOverlayRides } from '../services/floatingBubbleService';
 import { logShiftRideEntry } from '../firebase/api';
 
@@ -36,6 +39,7 @@ export function DriverProvider({ children }) {
   const lastCoordsRef = useRef(null);
   const lastHeadingRef = useRef(0);
   const lastBreadcrumbRef = useRef(0);
+  const liveShiftDistanceKmRef = useRef(0);
 
   // MDM Dedicated Device & Kiosk State
   const [restrictionState, setRestrictionState] = useState(null);
@@ -132,7 +136,14 @@ export function DriverProvider({ children }) {
         if (data.currentDutyId) {
           const unsubDuty = onSnapshot(doc(db, 'dutySessions', data.currentDutyId), (dutySnap) => {
             if (dutySnap.exists()) {
-              setActiveDutySession({ id: dutySnap.id, ...dutySnap.data() });
+              const dutyData = dutySnap.data();
+              setActiveDutySession({ id: dutySnap.id, ...dutyData });
+              if (dutyData.liveDistanceKm || dutyData.gpsDistanceKm) {
+                const existingDist = Number(dutyData.liveDistanceKm || dutyData.gpsDistanceKm || 0);
+                if (existingDist > liveShiftDistanceKmRef.current) {
+                  liveShiftDistanceKmRef.current = existingDist;
+                }
+              }
             } else {
               setActiveDutySession(null);
             }
@@ -209,6 +220,7 @@ export function DriverProvider({ children }) {
 
             const now = Date.now();
             let calculatedHeading = null;
+            let distMeters = 0;
 
             if (lastCoordsRef.current && lastCoordsRef.current.timestamp) {
               const dtSeconds = (now - lastCoordsRef.current.timestamp) / 1000;
@@ -222,7 +234,7 @@ export function DriverProvider({ children }) {
                           Math.cos(phi1) * Math.cos(phi2) *
                           Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
                 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                const distMeters = R * c;
+                distMeters = R * c;
 
                 if (distMeters >= 1.5) {
                   const calculatedSpeed = Math.round((distMeters / dtSeconds) * 3.6);
@@ -244,6 +256,14 @@ export function DriverProvider({ children }) {
             const effectiveHeading = (nativeHeading !== null && nativeHeading > 0)
               ? nativeHeading
               : (calculatedHeading !== null ? calculatedHeading : (lastHeadingRef.current || 0));
+
+            // Accumulate live shift distance from real GPS telemetry along roads (filtering jitter < 2.5m and teleportation > 500m)
+            if (distMeters >= 2.5 && distMeters <= 500) {
+              if (activeDutySession?.status === 'ACTIVE' || driverProfile?.isCurrentlyOnDuty) {
+                liveShiftDistanceKmRef.current += (distMeters / 1000);
+              }
+            }
+            const currentShiftKm = Math.round(liveShiftDistanceKmRef.current * 10) / 10;
 
             lastCoordsRef.current = { latitude: coords.latitude, longitude: coords.longitude, timestamp: now };
 
@@ -267,6 +287,8 @@ export function DriverProvider({ children }) {
                     accuracy: coords.accuracy || null,
                     timestamp: new Date().toISOString()
                   },
+                  shiftDistanceKm: currentShiftKm,
+                  liveDistanceKm: currentShiftKm,
                   lastActiveAt: new Date().toISOString()
                 }).catch(() => {});
               }
@@ -282,9 +304,16 @@ export function DriverProvider({ children }) {
                   latitude: coords.latitude,
                   longitude: coords.longitude,
                   speed: speedKmh,
+                  distanceKm: currentShiftKm,
                   isMock: loc.mocked || false,
                   deviceId: driverProfile?.boundDeviceId || Device.osBuildId || 'android_device'
                 }).catch(err => console.warn('Breadcrumb log error:', err.message));
+
+                updateDoc(doc(db, 'dutySessions', activeDutySession.id), {
+                  liveDistanceKm: currentShiftKm,
+                  gpsDistanceKm: currentShiftKm,
+                  lastGpsPingAt: new Date().toISOString()
+                }).catch(() => {});
               }
             }
           }
@@ -408,8 +437,49 @@ export function DriverProvider({ children }) {
     };
   }, [currentUser?.uid, driverProfile?.id, activeDutySession?.id]);
 
+  // Real-Time Fleet Safety Camera & Accelerometer Crash Telemetry
+  useEffect(() => {
+    const effectiveDriverId = driverProfile?.id || currentUser?.uid;
+    if (!effectiveDriverId) return;
+
+    // Start Safety Inspection listener on driver document
+    const stopInspectionListener = startSafetyInspectionListener({
+      driverId: effectiveDriverId,
+      dutyId: activeDutySession?.id || null,
+      getTelemetry: () => ({
+        latitude: currentLocation?.latitude || null,
+        longitude: currentLocation?.longitude || null,
+        speed: currentSpeed || 0,
+        activeGigApp: driverProfile?.activeGigRideApp || 'IDLE'
+      })
+    });
+
+    // Start Accelerometer Crash & Fall Telemetry during active duty
+    if (activeDutySession) {
+      startCrashMonitoring({
+        driverId: effectiveDriverId,
+        dutyId: activeDutySession?.id || null,
+        bikeId: assignedBike?.id || driverProfile?.assignedBikeId || null,
+        bikeRegistration: assignedBike?.registrationNumber || driverProfile?.assignedBikeRegistration || 'Assigned Bike',
+        getTelemetry: () => ({
+          latitude: currentLocation?.latitude || null,
+          longitude: currentLocation?.longitude || null,
+          speed: currentSpeed || 0
+        })
+      });
+    } else {
+      stopCrashMonitoring();
+    }
+
+    return () => {
+      if (stopInspectionListener) stopInspectionListener();
+      stopCrashMonitoring();
+    };
+  }, [driverProfile?.id, currentUser?.uid, activeDutySession?.id, assignedBike?.id, currentLocation?.latitude, currentLocation?.longitude, currentSpeed]);
+
   const logout = () => {
     stopMdmDeviceTelemetry();
+    stopCrashMonitoring();
     return signOut(auth);
   };
 
@@ -424,6 +494,7 @@ export function DriverProvider({ children }) {
         currentSpeed,
         systemSettings,
         todayDutyMinutes,
+        shiftDistanceKm: Math.round(liveShiftDistanceKmRef.current * 10) / 10,
         loading: authLoading || (Boolean(currentUser) && profileLoading),
         logout,
         // MDM & Privacy Additions
@@ -448,6 +519,10 @@ export function DriverProvider({ children }) {
         driverProfile={driverProfile}
         activeDutySession={activeDutySession}
         currentLocation={currentLocation}
+      />
+      <SafetyCameraHost 
+        driverProfile={driverProfile}
+        activeDutySession={activeDutySession}
       />
       {children}
     </DriverContext.Provider>

@@ -42,11 +42,15 @@ export default function BikeHandoverScreen({ navigation }) {
   });
 
   // Vehicle Identity & Documents Verification
+  const isCng = assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL';
   const [chassisVerified, setChassisVerified] = useState(false);
   const [engineVerified, setEngineVerified] = useState(false);
   const [rcCopyReceived, setRcCopyReceived] = useState(false);
   const [insuranceVerified, setInsuranceVerified] = useState(false);
   const [pucVerified, setPucVerified] = useState(false);
+  const [cngCylinderPlateVerified, setCngCylinderPlateVerified] = useState(false);
+  const [cngLeakageChecked, setCngLeakageChecked] = useState(false);
+  const [cngSwitchModeChecked, setCngSwitchModeChecked] = useState(false);
 
   // Mechanical & Tyres
   const [tyreFront, setTyreFront] = useState('GOOD'); // GOOD, MODERATE, WORN
@@ -98,6 +102,14 @@ export default function BikeHandoverScreen({ navigation }) {
       return;
     }
 
+    if (isCng && (!cngCylinderPlateVerified || !cngLeakageChecked)) {
+      Alert.alert(
+        'CNG Safety Checks Required',
+        'Please physically verify the CNG Cylinder Compliance Plate (hydro-test validity) and confirm zero gas leakage before taking custody.'
+      );
+      return;
+    }
+
     // 2. Meter Check
     if (!odometer || Number(odometer) <= 0) {
       Alert.alert('Odometer Required', 'Please enter the current odometer reading shown on the meter.');
@@ -125,7 +137,7 @@ export default function BikeHandoverScreen({ navigation }) {
         if (photos[angle]) {
           setUploadStatus(`Uploading ${angle.toUpperCase()} photo...`);
           const url = await uploadHandoverPhoto({
-            driverId: currentUser.uid,
+            driverId: currentUser?.uid || driverProfile?.id || auth?.currentUser?.uid,
             bikeId,
             angle,
             uri: photos[angle]
@@ -137,7 +149,7 @@ export default function BikeHandoverScreen({ navigation }) {
       setUploadStatus('Registering custody & activating driver profile...');
 
       await submitHandoverInspection({
-        driverId: currentUser.uid,
+        driverId: currentUser?.uid || driverProfile?.id || auth?.currentUser?.uid,
         driverName: driverProfile?.fullName || 'MM Ride Driver',
         driverPhone: driverProfile?.mobileNumber || '',
         bikeId,
@@ -159,6 +171,10 @@ export default function BikeHandoverScreen({ navigation }) {
         originalRcRetainedByOwner: true,
         insuranceVerified,
         pucVerified,
+        cngCylinderPlateVerified: isCng ? cngCylinderPlateVerified : null,
+        cngLeakageChecked: isCng ? cngLeakageChecked : null,
+        cngSwitchModeChecked: isCng ? cngSwitchModeChecked : null,
+        fuelType: assignedBike?.fuelType || 'PETROL',
         
         // Mechanical & Tyres
         tyreCondition: {
@@ -378,6 +394,46 @@ export default function BikeHandoverScreen({ navigation }) {
             <Text style={styles.checkDesc}>Pollution Under Control certificate is within validity date.</Text>
           </View>
         </View>
+
+        {isCng && (
+          <>
+            <View style={[styles.checkRow, { backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: 8, padding: 8, marginTop: 6 }]}>
+              <Switch
+                value={cngCylinderPlateVerified}
+                onValueChange={setCngCylinderPlateVerified}
+                trackColor={{ true: colors.success, false: colors.border }}
+              />
+              <View style={styles.checkCol}>
+                <Text style={[styles.checkTitle, { color: '#34D399' }]}>🟢 CNG Cylinder Plate & Hydro-Test Valid *</Text>
+                <Text style={styles.checkDesc}>PESO compliance metal plate is intact and within valid re-test date.</Text>
+              </View>
+            </View>
+
+            <View style={[styles.checkRow, { backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: 8, padding: 8, marginTop: 6 }]}>
+              <Switch
+                value={cngLeakageChecked}
+                onValueChange={setCngLeakageChecked}
+                trackColor={{ true: colors.success, false: colors.border }}
+              />
+              <View style={styles.checkCol}>
+                <Text style={[styles.checkTitle, { color: '#34D399' }]}>🟢 CNG Valve & Zero Leakage Confirmed *</Text>
+                <Text style={styles.checkDesc}>Shut-off valve is tight, no gas odor or hissing sound detected.</Text>
+              </View>
+            </View>
+
+            <View style={[styles.checkRow, { backgroundColor: 'rgba(16, 185, 129, 0.08)', borderRadius: 8, padding: 8, marginTop: 6 }]}>
+              <Switch
+                value={cngSwitchModeChecked}
+                onValueChange={setCngSwitchModeChecked}
+                trackColor={{ true: colors.success, false: colors.border }}
+              />
+              <View style={styles.checkCol}>
+                <Text style={[styles.checkTitle, { color: '#34D399' }]}>🟢 CNG / Petrol Mode Switch Functional</Text>
+                <Text style={styles.checkDesc}>Handlebar toggle switches smoothly between CNG and Petrol modes.</Text>
+              </View>
+            </View>
+          </>
+        )}
       </View>
 
       {/* SECTION 4: Mechanical & Parts Inspection */}

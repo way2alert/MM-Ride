@@ -1,65 +1,9 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function isDriver(driverId) {
-      return isAuthenticated() && request.auth.uid == driverId;
-    }
-
-    // Driver KYC and verification documents
-    match /documents/{driverId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isDriver(driverId) || isAuthenticated();
-    }
-
-    // Daily earnings screenshot proofs (Ola / Uber / Rapido)
-    match /earnings_proofs/{driverId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isDriver(driverId) || isAuthenticated();
-    }
-
-    // Fuel fill proof photos (Dispenser, Odometer, Receipt)
-    match /fuel_proofs/{driverId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isDriver(driverId) || isAuthenticated();
-    }
-
-    // Bike handover and return inspection photos
-    match /handover_photos/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    match /return_photos/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    // Incident, Accident and Damage photos
-    match /incident_photos/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    // In-shift identity verification selfies
-    match /verification_selfies/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    // Bike registry photos
-    match /bike_photos/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    // Catch-all fallback for authenticated app assets
+    // Full access for all MM Ride driver documents, photos, proofs, and telemetry uploads
     match /{allPaths=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if true;
     }
   }
 }

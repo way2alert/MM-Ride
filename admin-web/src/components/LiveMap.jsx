@@ -225,11 +225,10 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
             <span style="color: #64748b;">Assigned Vehicle:</span>
             <b style="color: #d97706;">${driver.assignedBikeRegistration || 'BIKE'}</b>
           </div>
-          ${driver.shiftDistanceKm ? `
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; border: 1px solid #bbf7d0;">
-            <span style="color: #166534; font-weight: 600;">Shift Traveled:</span>
-            <b style="color: #15803d; font-size: 13px;">${driver.shiftDistanceKm} km</b>
-          </div>` : ''}
+            <span style="color: #166534; font-weight: 700;">📍 Driven Till Now:</span>
+            <b style="color: #15803d; font-size: 13px;">${driver.shiftDistanceKm || 0} km</b>
+          </div>
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px; padding: 2px 6px;">
             <span style="color: #64748b;">Live Speed:</span>
             <b style="color: ${isOverspeed ? '#dc2626' : isMoving ? '#16a34a' : '#d97706'}; font-size: 13px;">
@@ -289,6 +288,7 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
                 <span class="status-pulse-dot"></span>
                 <span class="driver-pill-name" title="${driverName}">${driverName}</span>
                 <span class="driver-pill-speed" id="marker-speed-${driver.id}">${speedText}</span>
+                <span class="driver-pill-km" id="marker-km-${driver.id}">📍${driver.shiftDistanceKm || 0}km</span>
               </div>
               <div class="bike-rotator-wrapper ${isMoving ? 'is-moving' : ''}" id="bike-rotator-${driver.id}">
                 <div class="headlight-cone"></div>
@@ -299,8 +299,8 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
               </div>
             </div>
           `,
-          iconSize: [140, 74],
-          iconAnchor: [70, 52],
+          iconSize: [180, 74],
+          iconAnchor: [90, 52],
           popupAnchor: [0, -54]
         });
 
@@ -505,6 +505,7 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
         if (markerEl) {
           if (!v.rotatorEl) v.rotatorEl = markerEl.querySelector('.bike-rotator-wrapper');
           if (!v.speedEl) v.speedEl = markerEl.querySelector('.driver-pill-speed');
+          if (!v.kmEl) v.kmEl = markerEl.querySelector('.driver-pill-km');
 
           if (v.rotatorEl) {
             v.rotatorEl.style.transform = `rotate(${Math.round(v.currentBearing)}deg)`;
@@ -522,6 +523,10 @@ export default function LiveMap({ drivers = [], hubs = [], selectedDriver = null
             } else {
               v.speedEl.textContent = 'Idle';
             }
+          }
+
+          if (v.kmEl && v.driverData) {
+            v.kmEl.textContent = `📍${v.driverData.shiftDistanceKm || 0}km`;
           }
         }
 

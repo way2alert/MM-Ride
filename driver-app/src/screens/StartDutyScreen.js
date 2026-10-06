@@ -38,6 +38,9 @@ export default function StartDutyScreen({ navigation }) {
   const [proximityResult, setProximityResult] = useState({ within: true, distance: 0 });
   const [loading, setLoading] = useState(false);
 
+  const isCng = assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL';
+  const isEv = assignedBike?.fuelType === 'EV';
+
   const maxDutyHours = Number(systemSettings?.maxDutyHoursPerDay) || 12;
   const maxDutyMinutes = maxDutyHours * 60;
   const remainingTodayMinutes = Math.max(0, maxDutyMinutes - (todayDutyMinutes || 0));
@@ -123,6 +126,15 @@ export default function StartDutyScreen({ navigation }) {
       return;
     }
 
+    const effectiveBikeId = driverProfile?.assignedBikeId || assignedBike?.id;
+    if (!effectiveBikeId) {
+      Alert.alert(
+        'No Bike Assigned (வாகனம் ஒதுக்கப்படவில்லை)',
+        'No bike has been assigned to your driver account yet. Please contact depot admin or fleet manager to assign a vehicle before starting your shift.'
+      );
+      return;
+    }
+
     if (!helmetConfirmed) {
       Alert.alert('Safety Check', 'Please confirm that you are wearing your helmet and safety gear before starting.');
       return;
@@ -173,7 +185,9 @@ export default function StartDutyScreen({ navigation }) {
         } : { latitude: selectedHub?.latitude || 28.6115, longitude: selectedHub?.longitude || 77.0817 },
         pickupOdometer: enteredOdo,
         pickupFuelCharge: Number(fuelCharge) || 0,
-        pickupFuelLitres: Number(fuelCharge) || 0,
+        pickupFuelLitres: !isCng ? (Number(fuelCharge) || 0) : 0,
+        pickupFuelKg: isCng ? (Number(fuelCharge) || 0) : 0,
+        fuelType: assignedBike?.fuelType || 'PETROL',
         bikeCondition: condition,
         deviceId: driverProfile?.boundDeviceId || hardwareId || 'android_device_company'
       });
@@ -267,15 +281,23 @@ export default function StartDutyScreen({ navigation }) {
           placeholderTextColor="#64748B"
         />
 
-        <Text style={styles.label}>How many litres petrol *</Text>
+        <Text style={styles.label}>
+          {isCng 
+            ? 'CNG Gas Level in Tank (kg) *' 
+            : isEv 
+            ? 'Battery Charge Level (%) *' 
+            : 'How many litres petrol *'}
+        </Text>
         <View style={styles.fuelPresetsRow}>
-          {['1', '2', '3', '5'].map(val => (
+          {(isCng ? ['0.5', '1.0', '1.5', '2.0'] : isEv ? ['25', '50', '75', '100'] : ['1', '2', '3', '5']).map(val => (
             <TouchableOpacity
               key={val}
               style={[styles.fuelPresetPill, fuelCharge === val && styles.fuelPresetPillActive]}
               onPress={() => setFuelCharge(val)}
             >
-              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>{val} L</Text>
+              <Text style={[styles.fuelPresetText, fuelCharge === val && styles.fuelPresetTextActive]}>
+                {val} {isCng ? 'kg' : isEv ? '%' : 'L'}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -284,7 +306,7 @@ export default function StartDutyScreen({ navigation }) {
           keyboardType="decimal-pad"
           value={fuelCharge}
           onChangeText={setFuelCharge}
-          placeholder="Enter litres (e.g. 2.5)"
+          placeholder={isCng ? 'Enter CNG in kg (e.g. 1.8)' : isEv ? 'Enter battery % (e.g. 85)' : 'Enter litres (e.g. 2.5)'}
           placeholderTextColor="#64748B"
         />
 

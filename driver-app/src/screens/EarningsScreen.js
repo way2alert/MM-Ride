@@ -159,13 +159,13 @@ export default function EarningsScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Petrol & Reserve Policy Notice */}
+        {/* Fuel & Reserve Policy Notice */}
         <View style={styles.policyNotice}>
-          <Text style={styles.policyTitle}>⛽ Petrol & Maintenance Policy:</Text>
+          <Text style={styles.policyTitle}>⛽ 50/50 Shared Fuel (CNG / Petrol) & Maintenance Model:</Text>
           <Text style={styles.policyText}>
-            • Petrol paid by Owner. Normal service & repairs paid by Owner.{'\n'}
-            • Petrol is NEVER deducted from your 50% ride income share.{'\n'}
-            • The 10% reserve hold is recorded separately and settled on weekly cycle.
+            • Fuel (Petrol & CNG) is shared 50% by MM Ride Fleet Owner and 50% by Driver.{'\n'}
+            • Normal bike servicing, oil change & mechanical maintenance paid 100% by Owner.{'\n'}
+            • The 10% reserve safety hold is recorded separately and settled on weekly cycle.
           </Text>
         </View>
 

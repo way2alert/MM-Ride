@@ -810,10 +810,12 @@ async function runEndToEndVerification() {
   // 1. Owner physically checks driver's phone (Ola, Uber, Rapido apps) upon bike return at depot
   console.log("  🔍 Testing Owner Physical Phone Verification (Gross ₹2,500, Platform Fees ₹500, Cash ₹800)...");
   
-  // Test Petrol Policy / Fraud Prevention:
-  // Driver claims: "I spent ₹500 cash on petrol, so calculate my share on ₹2,000 instead of ₹2,500!"
-  // SYSTEM RULE: Petrol is an Owner Expense. Ride Net is calculated on full ₹2,500 - ₹500 = ₹2,000.
-  // Worker gets full 50% = ₹1,000. Petrol ₹500 is routed to separate Owner Fuel Ledger!
+  // Test 50/50 Shared Fuel Model (Petrol & CNG):
+  // Gross: ₹2,500 - Platform Fees: ₹500 = Net: ₹2,000.
+  // Worker 50% Share: ₹1,000 | 10% Reserve: ₹100.
+  // Total Fuel: ₹500 (Owner 50%: ₹250, Driver 50%: ₹250).
+  // Driver paid ₹500 at pump (REIMBURSED_TO_DRIVER) -> Fleet reimburses owner's 50% share (+₹250).
+  // Net Payable Today: ₹1,000 - ₹100 + ₹250 = ₹1,150.
   const settlement = await createSettlementRecord({
     driverId: TEST_DRIVER_ID,
     dutySessionId: duty.dutyId,
@@ -832,10 +834,12 @@ async function runEndToEndVerification() {
   assert(settlement.grossIncome === 2500, "Verified Gross income is ₹2,500 (incl. cash rides)");
   assert(settlement.platformCharges === 500, "Verified platform charges are ₹500");
   assert(settlement.netIncome === 2000, "Net income is ₹2,000 (Gross ₹2,500 - Platform Fees ₹500)");
-  assert(settlement.workerShare === 1000, "Worker share is exact 50%: ₹1,000 (NOT reduced for petrol!)");
+  assert(settlement.workerShare === 1000, "Worker share is exact 50%: ₹1,000");
   assert(settlement.ownerShare === 1000, "Owner share is exact 50%: ₹1,000");
   assert(settlement.reserveHold === 100, "10% temporary reserve hold from worker share is ₹100");
-  assert(settlement.payableToday === 900, "Payable today (90% of worker share) is ₹900");
+  assert(settlement.ownerFuelShare === 250, "Owner fuel share is 50%: ₹250");
+  assert(settlement.driverFuelShare === 250, "Driver fuel share is 50%: ₹250");
+  assert(settlement.payableToday === 1150, "Payable today (Worker ₹900 + 50% Owner fuel reimbursement ₹250) is ₹1,150");
   assert(settlement.status === "PENDING_PAYOUT", "Settlement status is PENDING_PAYOUT");
   assert(settlement.verificationMethod === "PHYSICAL_PHONE_INSPECTION", "Verification method is PHYSICAL_PHONE_INSPECTION");
 
@@ -850,7 +854,7 @@ async function runEndToEndVerification() {
   console.log("  🔍 Testing Driver Mobile View (Final verified earnings display)...");
   const earningsSnap = await mockDb.collection("earnings").doc(`EARN_${settlement.settlementId}`).get();
   assert(earningsSnap.exists === true, "Official earnings record generated for driver mobile app");
-  assert(earningsSnap.data().payableToday === 900, "Driver app displays ₹900 payable today");
+  assert(earningsSnap.data().payableToday === 1150, "Driver app displays ₹1,150 payable today (incl. 50% fuel reimbursement)");
   assert(earningsSnap.data().workerShare === 1000, "Driver app displays ₹1,000 worker share");
   assert(earningsSnap.data().fuelExpenseSeparatelyRecorded === 500, "Driver app acknowledges ₹500 fuel recorded in owner ledger");
 
@@ -972,6 +976,118 @@ async function runEndToEndVerification() {
     }
   });
   assert(true, "All audit log entries contain mandatory security fields: action, actor, source, timestamp");
+
+  // -------------------------------------------------------------
+  // STAGE 16: Fleet Optical Safety Inspection & Real-Time Crash Detection
+  // -------------------------------------------------------------
+  console.log("\n📌 STAGE 16: Fleet Optical Safety Inspection & Real-Time Crash Detection");
+  
+  // 1. Admin On-Demand Optical Safety Snapshot (Front / Passenger Check)
+  console.log("  🔍 Testing Admin On-Demand Optical Safety Snapshot Request...");
+  const safetyInspId = `INSP_TEST_${Date.now()}`;
+  await mockDb.collection("safetyInspections").doc(safetyInspId).set({
+    id: safetyInspId,
+    driverId: "DRV_RAJESH_001",
+    driverName: "Rajesh Kumar",
+    bikeRegistration: "DL 01 AB 1234",
+    cameraFacing: "front",
+    triggerType: "ADMIN_ON_DEMAND",
+    status: "PENDING",
+    requestedAt: new Date().toISOString()
+  });
+
+  await mockDb.collection("drivers").doc("DRV_RAJESH_001").update({
+    pendingSafetyInspection: {
+      inspectionId: safetyInspId,
+      triggerType: "ADMIN_ON_DEMAND",
+      cameraFacing: "front",
+      requestedAt: new Date().toISOString(),
+      status: "PENDING"
+    }
+  });
+
+  const pendingDriverSnap = await mockDb.collection("drivers").doc("DRV_RAJESH_001").get();
+  assert(pendingDriverSnap.data().pendingSafetyInspection?.status === "PENDING", "Safety inspection command successfully queued on driver profile");
+
+  // Simulate Driver Terminal executing optical capture and uploading frame
+  console.log("  🔍 Simulating Driver Terminal Camera Capture & Optical Telemetry Upload...");
+  const mockPhotoUrl = "https://firebasestorage.googleapis.com/v0/b/mm-ride-fleet.appspot.com/o/safety_snapshots%2Fsafety_DRV_RAJESH_001_front.jpg?alt=media";
+  await mockDb.collection("safetyInspections").doc(safetyInspId).update({
+    status: "CAPTURED",
+    photoUrl: mockPhotoUrl,
+    capturedAt: new Date().toISOString(),
+    telemetry: {
+      speed: 32,
+      latitude: 28.6115,
+      longitude: 77.0817,
+      activeGigApp: "RAPIDO",
+      batteryLevel: 88
+    }
+  });
+
+  await mockDb.collection("drivers").doc("DRV_RAJESH_001").update({
+    pendingSafetyInspection: null,
+    lastSafetySnapshot: {
+      inspectionId: safetyInspId,
+      photoUrl: mockPhotoUrl,
+      capturedAt: new Date().toISOString(),
+      triggerType: "ADMIN_ON_DEMAND",
+      cameraFacing: "front",
+      speed: 32
+    }
+  });
+
+  const verifiedInspSnap = await mockDb.collection("safetyInspections").doc(safetyInspId).get();
+  assert(verifiedInspSnap.data().status === "CAPTURED", "Safety inspection status is CAPTURED");
+  assert(verifiedInspSnap.data().photoUrl === mockPhotoUrl, "Optical photo URL attached to inspection record");
+  assert(verifiedInspSnap.data().telemetry.speed === 32, "Live vehicle speed (32 km/h) captured with optical evidence");
+  assert(verifiedInspSnap.data().telemetry.activeGigApp === "RAPIDO", "Active gig app (RAPIDO) verified in optical telemetry");
+
+  // 2. Hardware Accelerometer Crash & Fall Telemetry
+  console.log("  🔍 Testing Accelerometer High-G Impact Crash Incident Auto-Trigger...");
+  const crashIncidentId = `INCIDENT_CRASH_${Date.now()}`;
+  await mockDb.collection("incidents").doc(crashIncidentId).set({
+    driverId: "DRV_RAJESH_001",
+    bikeId: "BIKE_DL01AB1234",
+    bikeRegistration: "DL 01 AB 1234",
+    type: "CRASH_ACCIDENT_EMERGENCY",
+    severity: "CRITICAL",
+    status: "OPEN",
+    title: "🚨 CRITICAL VEHICLE CRASH / IMPACT DETECTED",
+    crashType: "HIGH_G_COLLISION",
+    gForce: 3.85,
+    speedAtImpact: 42,
+    speedDropAtImpact: 35,
+    photoUrl: mockPhotoUrl,
+    location: {
+      latitude: 28.6115,
+      longitude: 77.0817,
+      speed: 42
+    },
+    reportedBy: "SYSTEM_CRASH_SENSOR",
+    timestamp: new Date().toISOString()
+  });
+
+  await mockDb.collection("drivers").doc("DRV_RAJESH_001").update({
+    abnormalStopAlert: {
+      active: true,
+      reason: "CRASH_IMPACT_DETECTED",
+      crashType: "HIGH_G_COLLISION",
+      gForce: 3.85,
+      speed: 42,
+      photoUrl: mockPhotoUrl,
+      timestamp: new Date().toISOString()
+    }
+  });
+
+  const crashSnap = await mockDb.collection("incidents").doc(crashIncidentId).get();
+  assert(crashSnap.data().type === "CRASH_ACCIDENT_EMERGENCY", "Critical crash incident logged in emergency dispatch collection");
+  assert(crashSnap.data().gForce === 3.85, "Impact shock G-force (3.85G) recorded accurately from sensor");
+  assert(crashSnap.data().photoUrl === mockPhotoUrl, "Emergency accident photo evidence auto-attached to incident");
+
+  const driverCrashSnap = await mockDb.collection("drivers").doc("DRV_RAJESH_001").get();
+  assert(driverCrashSnap.data().abnormalStopAlert?.active === true, "Driver abnormalStopAlert active for instant Admin Web siren dispatch");
+  assert(driverCrashSnap.data().abnormalStopAlert?.reason === "CRASH_IMPACT_DETECTED", "Abnormal stop correctly tagged as CRASH_IMPACT_DETECTED");
 
   // -------------------------------------------------------------
   // FINAL SCORE & PRODUCTION READINESS

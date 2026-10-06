@@ -45,22 +45,16 @@ export default function IncidentReportScreen({ navigation }) {
 
     setLoading(true);
     try {
-      let photoBlob = null;
-      if (photoUri) {
-        const resp = await fetch(photoUri);
-        photoBlob = await resp.blob();
-      }
-
       await submitEmergencyIncident({
-        driverId: currentUser.uid,
-        bikeId: driverProfile.assignedBikeId || assignedBike?.id,
+        driverId: currentUser?.uid || driverProfile?.id,
+        bikeId: driverProfile?.assignedBikeId || assignedBike?.id || null,
         type,
         description,
         gps: currentLocation ? {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude
         } : null,
-        photoBlob
+        photoUri
       });
 
       Alert.alert(

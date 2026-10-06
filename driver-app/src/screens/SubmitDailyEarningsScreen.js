@@ -211,7 +211,7 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
     setLoading(true);
     try {
       await submitDailyRideEarnings({
-        driverId: currentUser?.uid || driverProfile?.id,
+        driverId: currentUser?.uid || auth?.currentUser?.uid || driverProfile?.id,
         date,
         grossIncome: totalGross,
         platformCharges: 0,
@@ -280,7 +280,7 @@ export default function SubmitDailyEarningsScreen({ navigation }) {
         <Text style={styles.infoBannerText}>
           • Ola aur Uber ke rides, cash aur online amounts daalein.{'\n'}
           • 50% Share aur depot jama rashi auto-calculate hogi.{'\n'}
-          • Petrol ka kharcha MM Ride ka hai (Aapka share safe hai).
+          • Fuel (Petrol & CNG) 50% Owner aur 50% Driver shared hisaab model hai.
         </Text>
       </View>
 

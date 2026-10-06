@@ -182,12 +182,13 @@ export default function DocumentUploadScreen({ navigation }) {
         }
       ];
 
+      const effectiveDriverId = currentUser?.uid || driverProfile?.id || auth?.currentUser?.uid;
       let count = 0;
       for (const item of uploadList) {
         count++;
         setUploadProgress(`Uploading ${count} of 5: ${item.label}...`);
         await uploadDriverDocument({
-          driverId: currentUser.uid,
+          driverId: effectiveDriverId,
           type: item.type,
           docNumber: item.docNumber,
           uri: item.uri,
@@ -196,7 +197,7 @@ export default function DocumentUploadScreen({ navigation }) {
       }
 
       setUploadProgress('Finalizing submission...');
-      await completeDocumentSubmission(currentUser.uid);
+      await completeDocumentSubmission(effectiveDriverId);
 
       Alert.alert(
         'Documents Submitted! 🎉',

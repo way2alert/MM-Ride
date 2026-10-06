@@ -9,7 +9,8 @@ import {
   RotateCcw, 
   Eye, 
   Bike, 
-  FileText 
+  FileText,
+  Star
 } from 'lucide-react';
 import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -23,7 +24,29 @@ export default function Drivers({ onSelectDriver }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [actionModal, setActionModal] = useState({ isOpen: false, type: '', driver: null, reason: '' });
+  const [ratingModal, setRatingModal] = useState({ isOpen: false, driver: null, rating: 5, notes: '' });
   const [loading, setLoading] = useState(false);
+
+  // Dynamic Driver Performance Star Rating (1.0 to 5.0 Stars)
+  const calculateDriverRating = (driver) => {
+    if (typeof driver.rating === 'number' && driver.rating >= 1 && driver.rating <= 5) {
+      return { score: driver.rating.toFixed(1), isManual: true };
+    }
+    if (typeof driver.starRating === 'number') {
+      return { score: driver.starRating.toFixed(1), isManual: true };
+    }
+
+    let base = 5.0;
+    if (driver.accountStatus === 'SUSPENDED' || driver.isSuspended) base -= 2.5;
+    if (driver.approvalStatus === 'REJECTED') base -= 3.0;
+    if (driver.verificationStatus !== 'DOCUMENTS_VERIFIED') base -= 0.5;
+
+    const speedViolations = Number(driver.speedViolationCount) || 0;
+    base -= Math.min(1.5, speedViolations * 0.3);
+
+    const finalScore = Math.max(1.0, Math.min(5.0, base));
+    return { score: finalScore.toFixed(1), isManual: false };
+  };
 
   useEffect(() => {
     return subscribeToCollection('drivers', setDrivers);
@@ -151,6 +174,36 @@ export default function Drivers({ onSelectDriver }) {
     }
   };
 
+  const handleSaveRating = async (e) => {
+    e.preventDefault();
+    if (!ratingModal.driver) return;
+    setLoading(true);
+    try {
+      const numRating = parseFloat(ratingModal.rating);
+      await updateDoc(doc(db, 'drivers', ratingModal.driver.id), {
+        rating: numRating,
+        ratingNotes: ratingModal.notes || '',
+        ratingUpdatedAt: new Date().toISOString(),
+        updatedAt: serverTimestamp()
+      });
+
+      await logAdminAudit({
+        driverId: ratingModal.driver.id,
+        action: 'DRIVER_RATING_UPDATED',
+        relevantRecordId: ratingModal.driver.id,
+        newValue: `${numRating} Stars`,
+        notes: `Driver performance star rating updated to ${numRating} Stars. ${ratingModal.notes ? 'Notes: ' + ratingModal.notes : ''}`
+      });
+
+      alert(`Rating for ${ratingModal.driver.fullName || 'Driver'} updated to ${numRating} ⭐!`);
+      setRatingModal({ isOpen: false, driver: null, rating: 5, notes: '' });
+    } catch (err) {
+      alert(`Error updating rating: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'ACTIVE_DRIVER': return 'badge-success';
@@ -212,6 +265,7 @@ export default function Drivers({ onSelectDriver }) {
               <tr>
                 <th>Driver ID / Name</th>
                 <th>Mobile Number</th>
+                <th>Performance Rating</th>
                 <th>Assigned Bike</th>
                 <th>Status</th>
                 <th>Approval</th>
@@ -229,6 +283,35 @@ export default function Drivers({ onSelectDriver }) {
                     <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{d.id}</div>
                   </td>
                   <td>{d.mobileNumber || '—'}</td>
+                  <td>
+                    {(() => {
+                      const { score, isManual } = calculateDriverRating(d);
+                      const numScore = parseFloat(score);
+                      const starColor = numScore >= 4.5 ? '#10B981' : numScore >= 3.5 ? '#F59E0B' : '#EF4444';
+                      const bg = numScore >= 4.0 ? 'rgba(16, 185, 129, 0.12)' : numScore >= 3.0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)';
+                      return (
+                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            backgroundColor: bg,
+                            color: starColor,
+                            padding: '3px 8px',
+                            borderRadius: '12px',
+                            fontWeight: 700,
+                            fontSize: '0.82rem'
+                          }}>
+                            <Star size={13} fill={starColor} color={starColor} />
+                            {score} / 5.0
+                          </span>
+                          <span style={{ fontSize: '0.65rem', color: '#64748B' }}>
+                            {isManual ? 'Admin verified' : 'Telemetry score'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td>
                     {d.assignedBikeRegistration ? (
                       <span className="badge badge-info">
@@ -250,13 +333,27 @@ export default function Drivers({ onSelectDriver }) {
                   </td>
                   <td>{formatDateTime(d.registeredAt || d.createdAt)}</td>
                   <td>
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                       <button 
                         className="btn btn-secondary btn-sm"
                         onClick={() => onSelectDriver(d)}
                         title="View Full Profile"
                       >
                         <Eye size={14} /> View
+                      </button>
+
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ borderColor: 'rgba(245, 158, 11, 0.4)', color: '#FCD34D' }}
+                        onClick={() => setRatingModal({
+                          isOpen: true,
+                          driver: d,
+                          rating: d.rating || Number(calculateDriverRating(d).score),
+                          notes: d.ratingNotes || ''
+                        })}
+                        title="Update Star Rating"
+                      >
+                        <Star size={13} /> Rating
                       </button>
 
                       {d.approvalStatus !== 'APPROVED' && (
@@ -317,7 +414,7 @@ export default function Drivers({ onSelectDriver }) {
 
               {filteredDrivers.length === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                     <div style={{ color: '#E2E8F0', fontSize: '1rem', fontWeight: 600, marginBottom: '0.4rem' }}>
                       No drivers found in &ldquo;{DRIVER_STATES[statusFilter] || statusFilter}&rdquo;
                     </div>
@@ -382,6 +479,70 @@ export default function Drivers({ onSelectDriver }) {
             />
           </div>
         )}
+      </Modal>
+
+      {/* Update Performance Star Rating Modal */}
+      <Modal
+        isOpen={ratingModal.isOpen}
+        onClose={() => setRatingModal({ isOpen: false, driver: null, rating: 5, notes: '' })}
+        title={`Performance Rating: ${ratingModal.driver?.fullName || 'Driver'}`}
+      >
+        <form onSubmit={handleSaveRating}>
+          <div style={{
+            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid rgba(245, 158, 11, 0.3)',
+            borderRadius: '8px',
+            padding: '0.85rem',
+            marginBottom: '1rem',
+            fontSize: '0.85rem',
+            color: '#FDE68A'
+          }}>
+            ⭐ Set driver's official platform rating based on customer feedback, punctuality, speed adherence, and depot vehicle care.
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+            <label className="form-label">Star Rating (1.0 to 5.0)</label>
+            <select
+              className="form-select"
+              value={ratingModal.rating}
+              onChange={(e) => setRatingModal({ ...ratingModal, rating: e.target.value })}
+              style={{ fontSize: '1rem', fontWeight: 600 }}
+            >
+              <option value="5.0">⭐⭐⭐⭐⭐ 5.0 - Excellent / Top Performer</option>
+              <option value="4.8">⭐⭐⭐⭐⭐ 4.8 - Very Good</option>
+              <option value="4.5">⭐⭐⭐⭐ 4.5 - Good</option>
+              <option value="4.0">⭐⭐⭐⭐ 4.0 - Satisfactory</option>
+              <option value="3.5">⭐⭐⭐ 3.5 - Average</option>
+              <option value="3.0">⭐⭐⭐ 3.0 - Needs Improvement</option>
+              <option value="2.0">⭐⭐ 2.0 - Poor / Safety Warnings</option>
+              <option value="1.0">⭐ 1.0 - Severe Violations</option>
+            </select>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+            <label className="form-label">Rating Notes / Feedback (Optional)</label>
+            <textarea
+              className="form-textarea"
+              rows={3}
+              placeholder="e.g. Excellent vehicle maintenance, punctual shift handover, zero complaints..."
+              value={ratingModal.notes}
+              onChange={(e) => setRatingModal({ ...ratingModal, notes: e.target.value })}
+            />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setRatingModal({ isOpen: false, driver: null, rating: 5, notes: '' })}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Saving...' : 'Save Rating ⭐'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

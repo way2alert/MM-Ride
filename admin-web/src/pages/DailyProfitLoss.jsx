@@ -106,7 +106,7 @@ export default function DailyProfitLoss() {
 
   const getDriverName = (driverId) => {
     const d = drivers.find(drv => drv.id === driverId);
-    return d ? (d.fullName || d.name) : 'Shivkumar Shankarappa Nindi';
+    return d ? (d.fullName || d.name) : 'Fleet Driver';
   };
 
   // Group all entries by Date (YYYY-MM-DD)
@@ -132,6 +132,7 @@ export default function DailyProfitLoss() {
           platforms: { OLA: 0, UBER: 0, RAPIDO: 0, OTHER: 0 },
           fuelCost: 0,
           fuelLitres: 0,
+          fuelKg: 0,
           startOdometer: null,
           endOdometer: null,
           maxOdometer: null
@@ -172,17 +173,21 @@ export default function DailyProfitLoss() {
           platforms: { OLA: 0, UBER: 0, RAPIDO: 0, OTHER: 0 },
           fuelCost: 0,
           fuelLitres: 0,
+          fuelKg: 0,
           startOdometer: null,
           endOdometer: null,
           maxOdometer: null
         };
       }
 
+      const isCng = f.fuelType === 'CNG' || f.unit === 'KG' || Boolean(f.kg);
       const amt = Number(f.amount) || 0;
-      const litres = Number(f.litres) || 0;
+      const litres = !isCng ? (Number(f.litres || f.quantity) || 0) : 0;
+      const kg = isCng ? (Number(f.kg || f.quantity || f.litres) || 0) : 0;
       datesMap[dateStr].fuel.push(f);
       datesMap[dateStr].fuelCost += amt;
       datesMap[dateStr].fuelLitres += litres;
+      datesMap[dateStr].fuelKg = (datesMap[dateStr].fuelKg || 0) + kg;
 
       if (f.odometerAtFill) {
         const odo = Number(f.odometerAtFill);
@@ -211,6 +216,7 @@ export default function DailyProfitLoss() {
           platforms: { OLA: 0, UBER: 0, RAPIDO: 0, OTHER: 0 },
           fuelCost: 0,
           fuelLitres: 0,
+          fuelKg: 0,
           startOdometer: null,
           endOdometer: null,
           maxOdometer: null
@@ -234,12 +240,18 @@ export default function DailyProfitLoss() {
       }
     });
 
-    // Compute Derived Financials for each date
+    // Compute Derived Financials for each date with 50% Owner / 50% Driver Shared Fuel Model
     const workerSplit = (systemSettings.workerSharePercent || 50) / 100;
     const list = Object.values(datesMap).map(row => {
       const driverShare = Math.round(row.grossRevenue * workerSplit * 100) / 100;
       const ownerGrossShare = Math.round((row.grossRevenue - driverShare) * 100) / 100;
-      const ownerNetProfit = Math.round((ownerGrossShare - row.fuelCost) * 100) / 100;
+
+      // 50% Owner and 50% Driver shared fuel model (Petrol & CNG)
+      const ownerFuelCost = Math.round((row.fuelCost * 0.5) * 100) / 100;
+      const driverFuelCost = Math.round((row.fuelCost * 0.5) * 100) / 100;
+      const ownerNetProfit = Math.round((ownerGrossShare - ownerFuelCost) * 100) / 100;
+      const driverNetEarnings = Math.round((driverShare - driverFuelCost) * 100) / 100;
+
       const profitMarginPercent = row.grossRevenue > 0 
         ? Math.round((ownerNetProfit / row.grossRevenue) * 1000) / 10 
         : 0;
@@ -264,6 +276,9 @@ export default function DailyProfitLoss() {
         ...row,
         driverShare,
         ownerGrossShare,
+        ownerFuelCost,
+        driverFuelCost,
+        driverNetEarnings,
         ownerNetProfit,
         profitMarginPercent,
         isProfit: ownerNetProfit >= 0,
@@ -316,7 +331,10 @@ export default function DailyProfitLoss() {
     const totalGross = filteredLedger.reduce((sum, r) => sum + r.grossRevenue, 0);
     const totalDriverShare = filteredLedger.reduce((sum, r) => sum + r.driverShare, 0);
     const totalFuelCost = filteredLedger.reduce((sum, r) => sum + r.fuelCost, 0);
-    const totalFuelLitres = filteredLedger.reduce((sum, r) => sum + r.fuelLitres, 0);
+    const totalOwnerFuelCost = filteredLedger.reduce((sum, r) => sum + (r.ownerFuelCost || 0), 0);
+    const totalDriverFuelCost = filteredLedger.reduce((sum, r) => sum + (r.driverFuelCost || 0), 0);
+    const totalFuelLitres = filteredLedger.reduce((sum, r) => sum + (r.fuelLitres || 0), 0);
+    const totalFuelKg = filteredLedger.reduce((sum, r) => sum + (r.fuelKg || 0), 0);
     const totalNetProfit = filteredLedger.reduce((sum, r) => sum + r.ownerNetProfit, 0);
     const totalRides = filteredLedger.reduce((sum, r) => sum + r.totalRides, 0);
     const totalCash = filteredLedger.reduce((sum, r) => sum + r.cashRevenue, 0);
@@ -343,6 +361,7 @@ export default function DailyProfitLoss() {
       totalDriverShare,
       totalFuelCost,
       totalFuelLitres,
+      totalFuelKg,
       totalNetProfit,
       totalRides,
       totalCash,
@@ -634,7 +653,7 @@ export default function DailyProfitLoss() {
           </div>
         </div>
 
-        {/* Card 3: Fuel Expense */}
+        {/* Card 3: Fuel Expense (50% Owner / 50% Driver Shared) */}
         <div style={{
           background: 'rgba(17, 24, 39, 0.8)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -646,7 +665,7 @@ export default function DailyProfitLoss() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <span style={{ fontSize: '0.75rem', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                3. Fuel Expense (Owner Cost)
+                3. Fuel Expense (50% Owner Share: ₹{totalOwnerFuelCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })})
               </span>
               <div style={{ fontSize: '1.85rem', fontWeight: 800, color: '#F87171', marginTop: '0.35rem' }}>
                 ₹{currentSummary.totalFuelCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -663,7 +682,7 @@ export default function DailyProfitLoss() {
             </div>
           </div>
           <div style={{ marginTop: '0.85rem', paddingTop: '0.65rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)', fontSize: '0.78rem', color: '#94A3B8' }}>
-            <b>{currentSummary.totalFuelLitres.toFixed(1)} Litres</b> filled • Dispenser camera verified
+            <b>50% Owner: ₹{totalOwnerFuelCost.toFixed(2)}</b> • <b>50% Driver: ₹{totalDriverFuelCost.toFixed(2)}</b> ({currentSummary.totalFuelKg > 0 ? `${currentSummary.totalFuelLitres.toFixed(1)} L / ${currentSummary.totalFuelKg.toFixed(1)} kg CNG` : `${currentSummary.totalFuelLitres.toFixed(1)} Litres`})
           </div>
         </div>
 
@@ -750,7 +769,7 @@ export default function DailyProfitLoss() {
             </div>
           </div>
           <div style={{ marginTop: '0.85rem', paddingTop: '0.65rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)', fontSize: '0.78rem', color: '#94A3B8' }}>
-            <b>{currentSummary.totalDistance} km</b> driven • Hero Passion Pro (DL9SBH6153)
+            <b>{currentSummary.totalDistance} km</b> driven fleet-wide
           </div>
         </div>
       </div>
@@ -964,9 +983,16 @@ export default function DailyProfitLoss() {
                         ₹{row.driverShare.toFixed(2)}
                       </td>
 
-                      {/* Fuel Expense */}
+                      {/* Fuel Expense (Total and 50% Owner Split) */}
                       <td style={{ padding: '0.9rem 1.1rem', textAlign: 'right', color: '#F87171', fontWeight: 600 }}>
-                        {row.fuelCost > 0 ? `₹${row.fuelCost.toFixed(2)}` : '—'}
+                        {row.fuelCost > 0 ? (
+                          <div>
+                            <div>₹{row.fuelCost.toFixed(2)}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#60A5FA', fontWeight: 500 }}>
+                              Owner 50%: ₹{row.ownerFuelCost.toFixed(2)}
+                            </div>
+                          </div>
+                        ) : '—'}
                       </td>
 
                       {/* Owner Net Profit */}
@@ -1082,7 +1108,10 @@ export default function DailyProfitLoss() {
                   Day Ledger Details: {detailModalDay.date}
                 </h3>
                 <span style={{ fontSize: '0.82rem', color: '#94A3B8' }}>
-                  Driver: <b>{getDriverName(detailModalDay.driverId)}</b> • DL9SBH6153
+                  Driver: <b>{getDriverName(detailModalDay.driverId)}</b>{detailModalDay.driverId && (() => {
+                    const d = drivers.find(drv => drv.id === detailModalDay.driverId);
+                    return d?.assignedBikeRegistration ? ` • ${d.assignedBikeRegistration}` : '';
+                  })()}
                 </span>
               </div>
               <button

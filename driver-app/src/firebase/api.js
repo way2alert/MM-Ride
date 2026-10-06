@@ -278,9 +278,16 @@ export async function requestStartDuty({
   pickupGps,
   pickupOdometer,
   pickupFuelCharge,
+  pickupFuelLitres,
+  pickupFuelKg,
+  fuelType = 'PETROL',
   bikeCondition = 'GOOD',
   deviceId
 }) {
+  const isCng = fuelType === 'CNG' || fuelType === 'CNG_PETROL';
+  const fuelKgNum = Number(pickupFuelKg || (isCng ? pickupFuelCharge : 0)) || 0;
+  const fuelLtrNum = Number(pickupFuelLitres || (!isCng ? pickupFuelCharge : 0)) || 0;
+
   const dutyRef = await addDoc(collection(db, 'dutySessions'), {
     driverId,
     bikeId,
@@ -290,9 +297,14 @@ export async function requestStartDuty({
     pickupGps,
     pickupOdometer: Number(pickupOdometer),
     pickupFuelCharge: Number(pickupFuelCharge),
+    pickupFuelLitres: fuelLtrNum,
+    pickupFuelKg: fuelKgNum,
+    fuelType,
     bikeCondition,
     deviceId,
     totalBreaksDurationMinutes: 0,
+    liveDistanceKm: 0,
+    gpsDistanceKm: 0,
     endTime: null,
     returnGps: null,
     returnOdometer: null,
@@ -319,7 +331,9 @@ export async function requestStartDuty({
     currentDutyId: dutyRef.id,
     isCurrentlyOnDuty: true,
     lastDutyStartedAt: nowIso,
-    lastKnownLocation: initialLoc
+    lastKnownLocation: initialLoc,
+    shiftDistanceKm: 0,
+    liveDistanceKm: 0
   });
 
   try {
@@ -336,12 +350,20 @@ export async function requestStartDuty({
     // silent
   }
 
-  await updateDoc(doc(db, 'bikes', bikeId), {
-    status: 'ACTIVE',
-    currentOdometer: Number(pickupOdometer),
-    currentFuelCharge: Number(pickupFuelCharge),
-    lastDutyId: dutyRef.id
-  });
+  if (bikeId) {
+    try {
+      await updateDoc(doc(db, 'bikes', bikeId), {
+        status: 'ACTIVE',
+        currentOdometer: Number(pickupOdometer),
+        currentFuelCharge: Number(pickupFuelCharge),
+        currentFuelLitres: fuelLtrNum,
+        currentFuelKg: fuelKgNum,
+        lastDutyId: dutyRef.id
+      });
+    } catch (bikeErr) {
+      console.warn('Bike status update on duty start warning:', bikeErr);
+    }
+  }
 
   return dutyRef.id;
 }
@@ -358,6 +380,8 @@ export async function requestEndDuty({
   returnOdometer,
   returnFuelCharge,
   returnFuelLitres,
+  returnFuelKg,
+  fuelType = 'PETROL',
   bikeCondition = 'GOOD',
   damageReported = false,
   damageNotes = '',
@@ -367,6 +391,9 @@ export async function requestEndDuty({
 }) {
   const endTime = new Date().toISOString();
   const totalDistance = Math.max(0, Number(returnOdometer) - Number(pickupOdometer));
+  const isCng = fuelType === 'CNG' || fuelType === 'CNG_PETROL';
+  const fuelKgNum = Number(returnFuelKg || (isCng ? returnFuelCharge : 0)) || 0;
+  const fuelLtrNum = Number(returnFuelLitres || (!isCng ? returnFuelCharge : 0)) || 0;
 
   // Compute duration consistently with backend
   let totalMinutes = 0;
@@ -417,7 +444,9 @@ export async function requestEndDuty({
     returnGps: cleanGps,
     returnOdometer: Number(returnOdometer) || Number(pickupOdometer) || 0,
     returnFuelCharge: Number(returnFuelCharge) || 0,
-    returnFuelLitres: Number(returnFuelLitres || returnFuelCharge) || 0,
+    returnFuelLitres: fuelLtrNum,
+    returnFuelKg: fuelKgNum,
+    fuelType,
     totalDistanceKm: Number(totalDistance) || 0,
     returnBikeCondition: bikeCondition || 'GOOD',
     damageReported: Boolean(damageReported),
@@ -446,7 +475,8 @@ export async function requestEndDuty({
         status: damageReported ? 'MAINTENANCE' : 'RETURNED',
         currentOdometer: Number(returnOdometer) || Number(pickupOdometer) || 0,
         currentFuelCharge: Number(returnFuelCharge) || 0,
-        currentFuelLitres: Number(returnFuelLitres || returnFuelCharge) || 0,
+        currentFuelLitres: fuelLtrNum,
+        currentFuelKg: fuelKgNum,
         lastDutyId: null
       });
     } catch (bikeErr) {
@@ -942,6 +972,10 @@ export async function submitFuelFillEntry({
   dutyId,
   amount,
   litres,
+  kg,
+  quantity,
+  fuelType = 'PETROL',
+  unit,
   odometer,
   dispenserPhotoUri,
   meterPhotoUri,
@@ -986,12 +1020,21 @@ export async function submitFuelFillEntry({
     }
   }
 
+  const finalFuelType = fuelType || (kg ? 'CNG' : 'PETROL');
+  const isCng = finalFuelType === 'CNG' || finalFuelType === 'CNG_PETROL';
+  const finalUnit = unit || (isCng ? 'KG' : 'LITRES');
+  const qtyVal = Number(quantity || (isCng ? (kg || litres) : (litres || kg))) || 0;
+
   const fuelDoc = await addDoc(collection(db, 'fuelExpenses'), {
     driverId: effectiveDriverId,
     bikeId: bikeId || null,
     dutyId: dutyId || null,
     amount: Number(amount),
-    litres: Number(litres),
+    fuelType: finalFuelType,
+    unit: finalUnit,
+    quantity: qtyVal,
+    litres: !isCng ? qtyVal : (litres ? Number(litres) : null),
+    kg: isCng ? qtyVal : (kg ? Number(kg) : null),
     odometerAtFill: Number(odometer),
     dispenserPhotoUrl,
     meterPhotoUrl,

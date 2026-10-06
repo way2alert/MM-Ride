@@ -53,8 +53,10 @@ export default function ActiveDutyScreen({ navigation, route }) {
   const [isImmobilized, setIsImmobilized] = useState(false);
   const [geofenceBreachLogged, setGeofenceBreachLogged] = useState(false);
 
-  // Petrol Fill Entry State (Anti-Petrol Fraud)
+  // Fuel / CNG Fill Entry State (Anti-Fuel Fraud)
+  const isBikeCng = assignedBike?.fuelType === 'CNG' || assignedBike?.fuelType === 'CNG_PETROL';
   const [showFuelModal, setShowFuelModal] = useState(false);
+  const [fuelTypeSelected, setFuelTypeSelected] = useState(isBikeCng ? 'CNG' : 'PETROL');
   const [fuelAmount, setFuelAmount] = useState('');
   const [fuelLitres, setFuelLitres] = useState('');
   const [fuelOdometer, setFuelOdometer] = useState(activeDutySession?.pickupOdometer ? String(activeDutySession.pickupOdometer) : '');
@@ -562,19 +564,23 @@ export default function ActiveDutyScreen({ navigation, route }) {
 
   const handleSubmitFuelFill = async () => {
     const amt = parseFloat(fuelAmount);
-    const ltr = parseFloat(fuelLitres);
+    const qty = parseFloat(fuelLitres);
     const odo = parseInt(fuelOdometer, 10);
+    const isClaimCng = fuelTypeSelected === 'CNG';
 
     if (isNaN(amt) || amt <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid fuel amount in ₹.');
       return;
     }
-    if (isNaN(ltr) || ltr <= 0) {
-      Alert.alert('Invalid Litres', 'Please enter valid litres of petrol filled.');
+    if (isNaN(qty) || qty <= 0) {
+      Alert.alert(
+        isClaimCng ? 'Invalid CNG Quantity' : 'Invalid Litres',
+        isClaimCng ? 'Please enter valid Kg of CNG filled (e.g. 1.85).' : 'Please enter valid litres of petrol filled.'
+      );
       return;
     }
     if (isNaN(odo) || odo <= 0) {
-      Alert.alert('Invalid Odometer', 'Please enter the current odometer reading at the petrol pump.');
+      Alert.alert('Invalid Odometer', 'Please enter the current odometer reading at the fuel pump.');
       return;
     }
     if (!meterPhoto) {
@@ -582,7 +588,7 @@ export default function ActiveDutyScreen({ navigation, route }) {
       return;
     }
     if (!receiptPhoto) {
-      Alert.alert('Pump Bill Required', 'Please photograph the petrol pump cash bill / printed receipt.');
+      Alert.alert('Pump Bill Required', 'Please photograph the fuel pump cash bill / printed receipt or dispenser meter.');
       return;
     }
 
@@ -593,7 +599,11 @@ export default function ActiveDutyScreen({ navigation, route }) {
         bikeId: driverProfile?.assignedBikeId || assignedBike?.id,
         dutyId: activeDutySession?.id,
         amount: amt,
-        litres: ltr,
+        fuelType: fuelTypeSelected,
+        unit: isClaimCng ? 'KG' : 'LITRES',
+        quantity: qty,
+        litres: !isClaimCng ? qty : null,
+        kg: isClaimCng ? qty : null,
         odometer: odo,
         dispenserPhotoUri: null,
         meterPhotoUri: meterPhoto,
@@ -608,7 +618,7 @@ export default function ActiveDutyScreen({ navigation, route }) {
       setReceiptPhoto(null);
       Alert.alert(
         'Fuel Fill Logged ✅',
-        'Your petrol fill has been recorded with bike odometer & pump bill proofs. It will be verified and approved in your shift settlement.'
+        `Your ${isClaimCng ? 'CNG' : 'petrol'} fill has been recorded with bike odometer & pump bill proofs. It will be verified and approved in your shift settlement.`
       );
     } catch (err) {
       Alert.alert('Submission Error', err.message);
@@ -920,16 +930,17 @@ export default function ActiveDutyScreen({ navigation, route }) {
         {/* Primary Controls */}
         <View style={styles.controlsSection}>
           <BigButton
-            title="Log Petrol Fill ⛽ (Fuel Claim)"
+            title={isBikeCng ? "Log CNG / Fuel Fill ⛽ (Fuel Claim)" : "Log Petrol Fill ⛽ (Fuel Claim)"}
             onPress={() => {
               if (!fuelOdometer && activeDutySession?.pickupOdometer) {
                 setFuelOdometer(String(activeDutySession.pickupOdometer));
               }
+              setFuelTypeSelected(isBikeCng ? 'CNG' : 'PETROL');
               setShowFuelModal(true);
             }}
             variant="secondary"
-            style={{ marginBottom: 12, backgroundColor: '#1E293B', borderColor: '#F59E0B', borderWidth: 1.5 }}
-            textStyle={{ color: '#FCD34D' }}
+            style={{ marginBottom: 12, backgroundColor: '#1E293B', borderColor: isBikeCng ? '#10B981' : '#F59E0B', borderWidth: 1.5 }}
+            textStyle={{ color: isBikeCng ? '#34D399' : '#FCD34D' }}
           />
 
           <BigButton
@@ -1129,42 +1140,74 @@ export default function ActiveDutyScreen({ navigation, route }) {
         onRequestClose={() => !submittingFuel && setShowFuelModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxHeight: '90%', padding: 18, borderColor: '#F59E0B' }]}>
+          <View style={[styles.modalBox, { maxHeight: '90%', padding: 18, borderColor: fuelTypeSelected === 'CNG' ? '#10B981' : '#F59E0B' }]}>
             <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false}>
               <View style={{ alignItems: 'center', marginBottom: 12 }}>
-                <Text style={{ fontSize: 36, marginBottom: 4 }}>⛽</Text>
-                <Text style={[styles.idleTitle, { color: '#FCD34D', textAlign: 'center' }]}>
-                  Log Petrol Fill (Fuel Claim)
+                <Text style={{ fontSize: 36, marginBottom: 4 }}>{fuelTypeSelected === 'CNG' ? '🟢' : '⛽'}</Text>
+                <Text style={[styles.idleTitle, { color: fuelTypeSelected === 'CNG' ? '#34D399' : '#FCD34D', textAlign: 'center' }]}>
+                  Log {fuelTypeSelected} Fill (Fuel Claim)
                 </Text>
                 <Text style={[styles.idleTitleHindi, { color: '#94A3B8' }]}>
-                  பெட்ரோல் போட்ட பதிவு & நேரடி சான்று
+                  {fuelTypeSelected === 'CNG' ? 'சிஎன்ஜி போட்ட பதிவு & ரசீது' : 'பெட்ரோல் போட்ட பதிவு & நேரடி சான்று'}
                 </Text>
+              </View>
+
+              {/* Fuel Type Selector (CNG vs Petrol) */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    backgroundColor: fuelTypeSelected === 'CNG' ? '#059669' : '#334155',
+                    borderWidth: 1.5,
+                    borderColor: fuelTypeSelected === 'CNG' ? '#34D399' : '#475569'
+                  }}
+                  onPress={() => setFuelTypeSelected('CNG')}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>🟢 CNG (kg)</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    alignItems: 'center',
+                    backgroundColor: fuelTypeSelected === 'PETROL' ? '#D97706' : '#334155',
+                    borderWidth: 1.5,
+                    borderColor: fuelTypeSelected === 'PETROL' ? '#FCD34D' : '#475569'
+                  }}
+                  onPress={() => setFuelTypeSelected('PETROL')}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>⛽ Petrol (L)</Text>
+                </TouchableOpacity>
               </View>
 
               {/* Proof Requirements Notice */}
               <View style={{
-                backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                backgroundColor: fuelTypeSelected === 'CNG' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                 borderWidth: 1,
-                borderColor: '#F59E0B',
+                borderColor: fuelTypeSelected === 'CNG' ? '#10B981' : '#F59E0B',
                 borderRadius: 10,
                 padding: 10,
                 marginBottom: 16
               }}>
-                <Text style={{ color: '#FCD34D', fontSize: 11, fontWeight: '800', marginBottom: 2 }}>
+                <Text style={{ color: fuelTypeSelected === 'CNG' ? '#34D399' : '#FCD34D', fontSize: 11, fontWeight: '800', marginBottom: 2 }}>
                   🔒 2 MANDATORY FUEL PROOFS REQUIRED
                 </Text>
                 <Text style={{ color: '#E2E8F0', fontSize: 11, lineHeight: 16 }}>
                   1. Bike Odometer & Speedometer Photo{'\n'}
-                  2. Petrol pump cash bill / printed receipt
+                  2. {fuelTypeSelected === 'CNG' ? 'CNG Pump Cash Bill / Dispenser Screen' : 'Petrol pump cash bill / printed receipt'}
                 </Text>
               </View>
 
               <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
-                PETROL AMOUNT (₹) *
+                {fuelTypeSelected} AMOUNT (₹) *
               </Text>
               <TextInput
                 style={[styles.idleInput, { minHeight: 44, marginBottom: 12 }]}
-                placeholder="e.g. 500"
+                placeholder="e.g. 150"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="numeric"
                 value={fuelAmount}
@@ -1172,11 +1215,11 @@ export default function ActiveDutyScreen({ navigation, route }) {
               />
 
               <Text style={{ color: '#94A3B8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
-                LITRES FILLED (L) *
+                {fuelTypeSelected === 'CNG' ? 'CNG QUANTITY (KG) *' : 'LITRES FILLED (L) *'}
               </Text>
               <TextInput
                 style={[styles.idleInput, { minHeight: 44, marginBottom: 12 }]}
-                placeholder="e.g. 4.85"
+                placeholder={fuelTypeSelected === 'CNG' ? 'e.g. 1.85' : 'e.g. 4.85'}
                 placeholderTextColor={colors.textMuted}
                 keyboardType="numeric"
                 value={fuelLitres}

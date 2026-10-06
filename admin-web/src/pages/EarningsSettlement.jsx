@@ -37,7 +37,7 @@ export default function EarningsSettlement() {
   const [activeTab, setActiveTab] = useState('settlements'); // settlements, submissions, fuel, platformAudit
 
   const [createModal, setCreateModal] = useState(false);
-  const [payoutModal, setPayoutModal] = useState({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI' });
+  const [payoutModal, setPayoutModal] = useState({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI', driverUpi: '', copied: false });
   const [adjModal, setAdjModal] = useState({ isOpen: false, settlement: null, amount: '', type: 'CREDIT', reason: '' });
   const [viewingFuelProof, setViewingFuelProof] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -79,7 +79,7 @@ export default function EarningsSettlement() {
   const bikesMap = Object.fromEntries(bikes.map(b => [b.id, b]));
   const dutySessionsMap = Object.fromEntries(dutySessions.map(ds => [ds.id, ds]));
 
-  // Calculate live split preview
+  // Calculate live split preview with 50/50 Shared Fuel Model (Petrol & CNG)
   const gross = Number(newSettlement.grossIncome) || 0;
   const fees = Number(newSettlement.platformCharges) || 0;
   const net = Math.max(0, gross - fees);
@@ -88,8 +88,14 @@ export default function EarningsSettlement() {
   const reserve10 = Math.round((worker50 * 0.10) * 100) / 100;
   const personalKm = Number(newSettlement.personalKm) || 0;
   const personalFuelCharge = personalKm > 0 ? Math.round((personalKm / 55) * 102.5) : 0;
-  const payableToday = Math.max(0, Math.round((worker50 - reserve10 - personalFuelCharge) * 100) / 100);
+
+  // 50% Owner and 50% Driver Fuel Model (Petrol & CNG)
   const fuelAmount = Number(newSettlement.fuelExpenseAmount) || 0;
+  const ownerFuelShare = Math.round((fuelAmount * 0.5) * 100) / 100;
+  const driverFuelShare = Math.round((fuelAmount * 0.5) * 100) / 100;
+  const driverFuelDeduction = newSettlement.fuelPaymentSource === 'OWNER_DIRECT' ? driverFuelShare : 0;
+  const driverFuelReimbursement = newSettlement.fuelPaymentSource === 'REIMBURSED_TO_DRIVER' ? ownerFuelShare : 0;
+  const payableToday = Math.max(0, Math.round((worker50 - reserve10 - personalFuelCharge - driverFuelDeduction + driverFuelReimbursement) * 100) / 100);
 
   const handleCreateSettlement = async (e) => {
     e.preventDefault();
@@ -111,6 +117,12 @@ export default function EarningsSettlement() {
         workerShare: worker50,
         ownerShare: owner50,
         reserveHold: reserve10,
+        fuelTotal: fuelAmount,
+        ownerFuelShare,
+        driverFuelShare,
+        driverFuelDeduction,
+        driverFuelReimbursement,
+        ownerNetIncome: Math.round((owner50 - ownerFuelShare) * 100) / 100,
         payableToday,
         cashRidesCollected: Number(newSettlement.cashRidesCollected) || 0,
         fuelExpenseAmount: fuelAmount,
@@ -138,6 +150,12 @@ export default function EarningsSettlement() {
         workerShare: worker50,
         ownerShare: owner50,
         reserveHold: reserve10,
+        fuelTotal: fuelAmount,
+        ownerFuelShare,
+        driverFuelShare,
+        driverFuelDeduction,
+        driverFuelReimbursement,
+        ownerNetIncome: Math.round((owner50 - ownerFuelShare) * 100) / 100,
         payableToday,
         verificationMethod: newSettlement.verificationMethod || 'PHYSICAL_PHONE_INSPECTION',
         fuelExpenseSeparatelyRecorded: fuelAmount,
@@ -152,7 +170,7 @@ export default function EarningsSettlement() {
           amount: fuelAmount,
           date: newSettlement.date,
           paymentSource: newSettlement.fuelPaymentSource,
-          notes: `Owner fuel expense: ${newSettlement.notes || 'Recorded at depot settlement'}`,
+          notes: `50/50 Fuel Split: ₹${fuelAmount} (50% Owner: ₹${ownerFuelShare}, 50% Driver: ₹${driverFuelShare}). ${newSettlement.notes || 'Recorded at depot settlement'}`,
           recordedAt: new Date().toISOString(),
           createdAt: serverTimestamp()
         });
@@ -161,7 +179,7 @@ export default function EarningsSettlement() {
           driverId: newSettlement.driverId,
           action: 'OWNER_FUEL_EXPENSE_RECORDED',
           relevantRecordId: fuelRef.id,
-          notes: `Owner fuel expense ₹${fuelAmount} recorded separately (${newSettlement.fuelPaymentSource}). Zero impact on worker's 50% ride share.`
+          notes: `50/50 fuel expense ₹${fuelAmount} recorded (${newSettlement.fuelPaymentSource}): 50% Owner ₹${ownerFuelShare}, 50% Driver ₹${driverFuelShare}.`
         });
       }
 
@@ -322,11 +340,15 @@ export default function EarningsSettlement() {
     }
   };
 
-  // 3-Way Fuel Mileage Analysis
+  // 3-Way Fuel Mileage Analysis (Supports CNG & Petrol)
   const computeFuelMileage = (fuel) => {
     const duty = fuel.dutyId ? dutySessionsMap[fuel.dutyId] : null;
-    const litres = Number(fuel.litres) || 0;
-    if (!litres || litres <= 0) return { mileage: null, status: 'UNKNOWN', distanceKm: null };
+    const bike = fuel.bikeId ? bikesMap[fuel.bikeId] : null;
+    const isCng = fuel.fuelType === 'CNG' || fuel.unit === 'KG' || Boolean(fuel.kg) || bike?.fuelType === 'CNG';
+    const quantity = Number(isCng ? (fuel.kg || fuel.quantity || fuel.litres) : (fuel.litres || fuel.quantity)) || 0;
+    const unitLabel = isCng ? 'km/kg' : 'km/L';
+
+    if (!quantity || quantity <= 0) return { mileage: null, status: 'UNKNOWN', distanceKm: null, unit: unitLabel, isCng };
 
     let distanceKm = null;
     if (duty) {
@@ -340,27 +362,42 @@ export default function EarningsSettlement() {
     }
 
     if (distanceKm === null || distanceKm <= 0) {
-      return { mileage: null, status: 'NO_SHIFT_DATA', distanceKm: null };
+      return { mileage: null, status: 'NO_SHIFT_DATA', distanceKm: null, unit: unitLabel, isCng };
     }
 
-    const mileage = Math.round((distanceKm / litres) * 10) / 10;
+    const mileage = Math.round((distanceKm / quantity) * 10) / 10;
     let status = 'OPTIMAL';
-    let note = 'Normal Splendor mileage (45-65 km/L)';
+    let note = isCng ? 'Normal Bajaj Freedom CNG mileage (80-110 km/kg)' : 'Normal Splendor petrol mileage (45-65 km/L)';
 
-    if (mileage < 38) {
-      status = 'HIGH_CONSUMPTION';
-      note = '🚨 Abnormal high consumption! Fuel siphoning or false litres claim suspected';
-    } else if (mileage > 75) {
-      status = 'ODOMETER_ANOMALY';
-      note = '⚠️ Unusually high mileage. Check odometer cable or incorrect reading';
+    if (isCng) {
+      if (mileage < 65) {
+        status = 'HIGH_CONSUMPTION';
+        note = '🚨 Abnormal high CNG consumption! Gas leakage or false kg claim suspected';
+      } else if (mileage > 130) {
+        status = 'ODOMETER_ANOMALY';
+        note = '⚠️ Unusually high CNG mileage. Check odometer cable or partial tank fill';
+      }
+    } else {
+      if (mileage < 38) {
+        status = 'HIGH_CONSUMPTION';
+        note = '🚨 Abnormal high consumption! Fuel siphoning or false litres claim suspected';
+      } else if (mileage > 75) {
+        status = 'ODOMETER_ANOMALY';
+        note = '⚠️ Unusually high mileage. Check odometer cable or incorrect reading';
+      }
     }
 
-    return { mileage, status, note, distanceKm };
+    return { mileage, status, note, distanceKm, unit: unitLabel, isCng };
   };
 
   const handleApproveFuel = async (fuel) => {
     const driverName = driversMap[fuel.driverId]?.fullName || 'driver';
-    if (!window.confirm(`Approve fuel reimbursement of ₹${fuel.amount} (${fuel.litres || '—'}L) for ${driverName}?`)) return;
+    const isCngClaim = fuel.fuelType === 'CNG' || fuel.unit === 'KG' || Boolean(fuel.kg);
+    const qtyStr = isCngClaim 
+      ? `${fuel.kg || fuel.quantity || fuel.litres || '—'} kg` 
+      : `${fuel.litres || fuel.quantity || '—'} L`;
+
+    if (!window.confirm(`Approve ${isCngClaim ? 'CNG' : 'fuel'} reimbursement of ₹${fuel.amount} (${qtyStr}) for ${driverName}?`)) return;
     try {
       await updateDoc(doc(db, 'fuelExpenses', fuel.id), {
         status: 'APPROVED',
@@ -371,7 +408,7 @@ export default function EarningsSettlement() {
         driverId: fuel.driverId,
         action: 'FUEL_CLAIM_APPROVED',
         relevantRecordId: fuel.id,
-        notes: `Approved petrol claim ₹${fuel.amount} (${fuel.litres || '—'}L). Reconciled with shift mileage.`
+        notes: `Approved ${isCngClaim ? 'CNG' : 'petrol'} claim ₹${fuel.amount} (${qtyStr}). Reconciled with shift mileage.`
       });
     } catch (e) {
       alert('Error approving fuel claim: ' + e.message);
@@ -526,7 +563,7 @@ export default function EarningsSettlement() {
                         </span>
                         {s.fuelExpenseAmount > 0 && (
                           <div style={{ fontSize: '0.7rem', color: '#F59E0B', marginTop: 2 }}>
-                            ⛽ Fuel: ₹{s.fuelExpenseAmount} (Owner)
+                            ⛽ Fuel: ₹{s.fuelExpenseAmount} (50/50 Split)
                           </div>
                         )}
                       </td>
@@ -543,7 +580,11 @@ export default function EarningsSettlement() {
                           {s.status !== 'PAID' && (
                             <button
                               className="btn btn-success btn-sm"
-                              onClick={() => setPayoutModal({ isOpen: true, settlement: s, paymentRef: '', paymentMethod: 'UPI' })}
+                              onClick={() => {
+                                const drv = driversMap[s.driverId];
+                                const initialUpi = drv?.upiId || drv?.bankDetails?.upiId || (drv?.mobileNumber ? `${drv.mobileNumber}@upi` : '');
+                                setPayoutModal({ isOpen: true, settlement: s, paymentRef: '', paymentMethod: 'UPI', driverUpi: initialUpi, copied: false });
+                              }}
                               title="Process Payout"
                             >
                               Pay ₹{s.payableToday}
@@ -765,10 +806,10 @@ export default function EarningsSettlement() {
             {/* Three-Way Audit Protocol Explanation */}
             <div style={{ padding: '0.85rem 1rem', background: 'rgba(245, 158, 11, 0.08)', borderRadius: 10, marginBottom: '1.25rem', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#F59E0B', fontSize: '0.88rem', fontWeight: 700 }}>
-                <Fuel size={17} /> THREE-WAY FUEL RECONCILIATION FORMULA (Anti-Petrol Cheating System)
+                <Fuel size={17} /> THREE-WAY FUEL & CNG RECONCILIATION FORMULA (Anti-Fuel Fraud System)
               </div>
               <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: '#CBD5E1', lineHeight: 1.5 }}>
-                <b>Litres Claimed ÷ (Shift Odometer Delta & GPS Actual KM) = Real-World Mileage (km/L).</b> Normal Hero Splendor operates at <b>45–65 km/L</b>. Mileage below <b>38 km/L</b> flags automated siphoning risk. Driver cannot claim manual amount without pump dispenser camera proof and matching pump odometer.
+                <b>Quantity Claimed ÷ (Shift Odometer Delta & GPS Actual KM) = Real-World Mileage (km/L or km/kg).</b> Hero Splendor petrol operates at <b>45–65 km/L</b>. Bajaj Freedom CNG operates at <b>80–110 km/kg</b>. Mileage below minimum flags automated siphoning / leakage risk. Driver cannot claim manual amount without pump dispenser camera proof and matching pump odometer.
               </p>
             </div>
 
@@ -778,7 +819,7 @@ export default function EarningsSettlement() {
                   <tr>
                     <th>Date / Claim ID</th>
                     <th>Driver & Bike</th>
-                    <th>Amount & Litres</th>
+                    <th>Amount & Quantity</th>
                     <th>Pump Odometer & GPS</th>
                     <th>Camera Proofs</th>
                     <th>3-Way Mileage Audit</th>
@@ -791,7 +832,10 @@ export default function EarningsSettlement() {
                     const driver = driversMap[f.driverId];
                     const bike = bikesMap[f.bikeId];
                     const analysis = computeFuelMileage(f);
-                    const unitRate = f.amount && f.litres ? Math.round((Number(f.amount) / Number(f.litres)) * 10) / 10 : null;
+                    const isCngClaim = f.fuelType === 'CNG' || f.unit === 'KG' || Boolean(f.kg) || bike?.fuelType === 'CNG';
+                    const claimQty = Number(isCngClaim ? (f.kg || f.quantity || f.litres) : (f.litres || f.quantity)) || 0;
+                    const claimUnit = isCngClaim ? 'kg' : 'L';
+                    const unitRate = f.amount && claimQty > 0 ? Math.round((Number(f.amount) / claimQty) * 10) / 10 : null;
 
                     return (
                       <tr key={f.id}>
@@ -804,12 +848,17 @@ export default function EarningsSettlement() {
                           <div style={{ fontSize: '0.75rem', color: '#60A5FA' }}>
                             {bike?.registrationNumber || driver?.assignedBikeRegistration || 'Assigned Bike'}
                           </div>
+                          {isCngClaim && (
+                            <span className="badge badge-success" style={{ fontSize: '0.65rem', padding: '1px 5px', marginTop: 3 }}>
+                              🟢 CNG Bike
+                            </span>
+                          )}
                         </td>
                         <td>
                           <b style={{ color: '#F59E0B', fontSize: '1rem' }}>₹{f.amount}</b>
-                          {f.litres && (
-                            <div style={{ fontSize: '0.75rem', color: '#CBD5E1' }}>
-                              {f.litres} L {unitRate ? `(@ ₹${unitRate}/L)` : ''}
+                          {claimQty > 0 && (
+                            <div style={{ fontSize: '0.75rem', color: '#CBD5E1', marginTop: 2 }}>
+                              {claimQty} {claimUnit} {unitRate ? `(@ ₹${unitRate}/${claimUnit})` : ''}
                             </div>
                           )}
                         </td>
@@ -880,10 +929,12 @@ export default function EarningsSettlement() {
                                   fontWeight: 800,
                                   color: analysis.status === 'HIGH_CONSUMPTION' ? '#EF4444' : analysis.status === 'ODOMETER_ANOMALY' ? '#F59E0B' : '#10B981'
                                 }}>
-                                  {analysis.mileage} km/L
+                                  {analysis.mileage} {analysis.unit || 'km/L'}
                                 </span>
                                 {analysis.status === 'HIGH_CONSUMPTION' && (
-                                  <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>🚨 Siphoning?</span>
+                                  <span className="badge badge-danger" style={{ fontSize: '0.65rem' }}>
+                                    {isCngClaim ? '🚨 High CNG / Leak?' : '🚨 Siphoning?'}
+                                  </span>
                                 )}
                                 {analysis.status === 'ODOMETER_ANOMALY' && (
                                   <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>⚠️ Tampering?</span>
@@ -893,7 +944,7 @@ export default function EarningsSettlement() {
                                 )}
                               </div>
                               <div style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
-                                Shift: {analysis.distanceKm} km ÷ {f.litres} L
+                                Shift: {analysis.distanceKm} km ÷ {claimQty} {claimUnit}
                               </div>
                             </div>
                           ) : (
@@ -1325,7 +1376,7 @@ export default function EarningsSettlement() {
             <div>• Check driver's phone (Ola Driver, Uber Driver, Rapido Captain).</div>
             <div>• Enter combined verified daily gross ride income and app platform deductions.</div>
             <div>• <b>Cash Rides:</b> Must remain included in verified Gross Income.</div>
-            <div>• <b>Petrol Policy:</b> Petrol is an <u>Owner Expense</u>. Never deduct petrol from ride income! Record it below in the separate Owner Fuel Ledger.</div>
+            <div>• <b>50/50 Shared Fuel Model (Petrol & CNG):</b> Fuel expense is shared 50% Owner and 50% Driver.</div>
           </div>
 
           <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -1356,6 +1407,64 @@ export default function EarningsSettlement() {
               />
             </div>
           </div>
+
+          {/* Suspected Offline Cash Ride Cross-Examination Alert */}
+          {(() => {
+            const suspectedEvents = newSettlement.driverId
+              ? platformRideEvents.filter(e =>
+                  e.driverId === newSettlement.driverId &&
+                  (e.suspectedOfflineCashRide || (e.eventType === 'RIDE_CANCELLED' && (e.distanceAfterEventKm || 0) > 2))
+                )
+              : [];
+            if (suspectedEvents.length === 0) return null;
+
+            const totalExtraKm = suspectedEvents.reduce((acc, cur) => acc + (cur.distanceAfterEventKm || 0), 0);
+            const estExtraFare = Math.round(totalExtraKm * 14);
+
+            return (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: 8,
+                padding: '0.85rem 1rem',
+                marginBottom: '1.25rem',
+                color: '#F87171'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#EF4444' }}>
+                    <ShieldAlert size={17} /> 🚨 FRAUD RADAR: {suspectedEvents.length} SUSPECTED OFFLINE CASH RIDE(S) DETECTED!
+                  </div>
+                  <span className="badge badge-danger" style={{ fontSize: '0.72rem' }}>
+                    Est. ₹{estExtraFare} Undeclared
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#FCA5A5', lineHeight: 1.4 }}>
+                  Platform trip was cancelled in app, but the vehicle traveled a further <b>{totalExtraKm.toFixed(1)} km</b> immediately afterwards.
+                  Please physically check the driver's phone ride history / UPI cash collections before settling.
+                </div>
+                <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: '#F87171', fontSize: '0.75rem' }}
+                    onClick={() => {
+                      const curCash = Number(newSettlement.cashRidesCollected) || 0;
+                      setNewSettlement(prev => ({
+                        ...prev,
+                        cashRidesCollected: String(curCash + estExtraFare),
+                        notes: `${prev.notes ? prev.notes + ' | ' : ''}Includes ₹${estExtraFare} recovered from ${suspectedEvents.length} cancelled offline trips (${totalExtraKm.toFixed(1)} km)`.trim()
+                      }));
+                    }}
+                  >
+                    + Add ₹{estExtraFare} to Cash Rides Collected
+                  </button>
+                  <span style={{ fontSize: '0.72rem', color: '#CBD5E1' }}>
+                    Click to include estimated undeclared fare into cash collection.
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="form-row-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
             <div className="form-group">
@@ -1401,7 +1510,7 @@ export default function EarningsSettlement() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Separate Owner Petrol Expense (₹) (Optional)</label>
+              <label className="form-label">Shift Fuel (Petrol / CNG) Expense (₹) (Optional)</label>
               <input
                 type="number"
                 step="0.01"
@@ -1410,7 +1519,7 @@ export default function EarningsSettlement() {
                 value={newSettlement.fuelExpenseAmount}
                 onChange={(e) => setNewSettlement({ ...newSettlement, fuelExpenseAmount: e.target.value })}
               />
-              <span style={{ fontSize: '0.72rem', color: '#F59E0B' }}>Owner expense ledger — ZERO deduction on worker share</span>
+              <span style={{ fontSize: '0.72rem', color: '#F59E0B' }}>50% Owner / 50% Driver Shared Model</span>
             </div>
           </div>
 
@@ -1431,14 +1540,14 @@ export default function EarningsSettlement() {
 
           {fuelAmount > 0 && (
             <div className="form-group" style={{ marginBottom: '1rem' }}>
-              <label className="form-label">Petrol Payment Source</label>
+              <label className="form-label">Petrol / CNG Payment Source</label>
               <select
                 className="form-select"
                 value={newSettlement.fuelPaymentSource}
                 onChange={(e) => setNewSettlement({ ...newSettlement, fuelPaymentSource: e.target.value })}
               >
-                <option value="OWNER_DIRECT">Owner Paid Directly (Depot card / UPI)</option>
-                <option value="REIMBURSED_TO_DRIVER">Driver Paid (Reimbursed separately by Owner)</option>
+                <option value="OWNER_DIRECT">Owner / Company Paid Directly at Pump (Deduct 50% Driver share from payout)</option>
+                <option value="REIMBURSED_TO_DRIVER">Driver Paid Out-Of-Pocket at Pump (Reimburse 50% Owner share to driver)</option>
               </select>
             </div>
           )}
@@ -1476,16 +1585,35 @@ export default function EarningsSettlement() {
                 <b style={{ color: '#F87171' }}>-{formatCurrency(personalFuelCharge)}</b>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: '0.95rem' }}>
-              <span style={{ color: '#FFF', fontWeight: 600 }}>Payable to Driver Today (After Deductions):</span>
-              <b style={{ color: '#10B981' }}>{formatCurrency(payableToday)}</b>
-            </div>
 
             {fuelAmount > 0 && (
               <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px dashed rgba(245, 158, 11, 0.4)', fontSize: '0.8rem', color: '#FDE68A' }}>
-                ⛽ <b>Owner Petrol Expense:</b> {formatCurrency(fuelAmount)} routed to Company Ledger ({newSettlement.fuelPaymentSource}). Zero deduction on worker's {formatCurrency(worker50)} share.
+                <div style={{ fontWeight: 700, color: '#F59E0B', marginBottom: 4 }}>
+                  ⛽ 50/50 Shared Fuel Model Breakdown (Petrol & CNG):
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#CBD5E1' }}>
+                  <span>Total Fuel at Pump:</span>
+                  <b>{formatCurrency(fuelAmount)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#60A5FA' }}>
+                  <span>Owner 50% Fuel Share:</span>
+                  <b>{formatCurrency(ownerFuelShare)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#FCD34D' }}>
+                  <span>Driver 50% Fuel Share:</span>
+                  <b>{formatCurrency(driverFuelShare)}</b>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: newSettlement.fuelPaymentSource === 'OWNER_DIRECT' ? '#F87171' : '#34D399' }}>
+                  <span>{newSettlement.fuelPaymentSource === 'OWNER_DIRECT' ? 'Driver 50% Fuel Deduction (Company Paid):' : 'Owner 50% Fuel Reimbursement (Driver Paid):'}</span>
+                  <b>{newSettlement.fuelPaymentSource === 'OWNER_DIRECT' ? `-${formatCurrency(driverFuelDeduction)}` : `+${formatCurrency(driverFuelReimbursement)}`}</b>
+                </div>
               </div>
             )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, marginTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: '0.95rem' }}>
+              <span style={{ color: '#FFF', fontWeight: 600 }}>Payable to Driver Today (After Deductions):</span>
+              <b style={{ color: '#10B981' }}>{formatCurrency(payableToday)}</b>
+            </div>
           </div>
 
           <div className="form-group">
@@ -1510,16 +1638,16 @@ export default function EarningsSettlement() {
         </form>
       </Modal>
 
-      {/* Process Payout Modal */}
+      {/* Process Payout Modal with 1-Click Dynamic UPI QR & Intent Links */}
       <Modal
         isOpen={payoutModal.isOpen}
-        onClose={() => setPayoutModal({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI' })}
+        onClose={() => setPayoutModal({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI', driverUpi: '', copied: false })}
         title={`Disburse Settlement Payout: ${payoutModal.settlement?.settlementId || payoutModal.settlement?.id}`}
         footer={
           <>
             <button
               className="btn btn-secondary"
-              onClick={() => setPayoutModal({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI' })}
+              onClick={() => setPayoutModal({ isOpen: false, settlement: null, paymentRef: '', paymentMethod: 'UPI', driverUpi: '', copied: false })}
             >
               Cancel
             </button>
@@ -1528,38 +1656,146 @@ export default function EarningsSettlement() {
               onClick={handleProcessPayout}
               disabled={loading}
             >
-              {loading ? 'Processing...' : 'Mark as Paid'}
+              {loading ? 'Processing...' : 'Mark as Paid & Disbursed'}
             </button>
           </>
         }
       >
-        <p style={{ color: '#E2E8F0', marginBottom: '1rem', fontSize: '0.9rem' }}>
-          Mark payable amount of <b>{formatCurrency(payoutModal.settlement?.payableToday)}</b> as disbursed to the driver.
-        </p>
+        {(() => {
+          const payoutDriver = driversMap[payoutModal.settlement?.driverId];
+          const payoutAmount = payoutModal.settlement?.payableToday || 0;
+          const currentUpi = payoutModal.driverUpi !== undefined 
+            ? payoutModal.driverUpi 
+            : (payoutDriver?.upiId || payoutDriver?.bankDetails?.upiId || (payoutDriver?.mobileNumber ? `${payoutDriver.mobileNumber}@upi` : ''));
+          const driverName = payoutDriver?.fullName || 'Driver';
+          const upiNote = `MMRide_${payoutModal.settlement?.settlementId?.slice(-8) || 'Settlement'}`;
+          const upiUri = currentUpi && payoutAmount > 0 
+            ? `upi://pay?pa=${encodeURIComponent(currentUpi)}&pn=${encodeURIComponent(driverName)}&am=${payoutAmount}&cu=INR&tn=${encodeURIComponent(upiNote)}` 
+            : '';
+          const qrCodeUrl = upiUri 
+            ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(upiUri)}` 
+            : null;
 
-        <div className="form-group">
-          <label className="form-label">Payment Method</label>
-          <select
-            className="form-select"
-            value={payoutModal.paymentMethod}
-            onChange={(e) => setPayoutModal(prev => ({ ...prev, paymentMethod: e.target.value }))}
-          >
-            <option value="UPI">UPI Transfer</option>
-            <option value="NEFT">Bank Transfer (NEFT/IMPS)</option>
-            <option value="CASH">Cash at Depot Counter</option>
-          </select>
-        </div>
+          return (
+            <div>
+              {/* Beneficiary & Amount Summary */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.85rem 1rem',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '8px',
+                marginBottom: '1rem'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Beneficiary Driver</div>
+                  <div style={{ fontWeight: 700, color: '#FFF', fontSize: '1rem' }}>
+                    {driverName} ({payoutDriver?.mobileNumber || payoutModal.settlement?.driverId})
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#94A3B8' }}>Payable Today</div>
+                  <div style={{ fontWeight: 800, color: '#10B981', fontSize: '1.3rem' }}>
+                    {formatCurrency(payoutAmount)}
+                  </div>
+                </div>
+              </div>
 
-        <div className="form-group">
-          <label className="form-label">Transaction Reference Number / UTR</label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="e.g. UPI/3910291039 or Receipt #"
-            value={payoutModal.paymentRef}
-            onChange={(e) => setPayoutModal(prev => ({ ...prev, paymentRef: e.target.value }))}
-          />
-        </div>
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label">Payment Method</label>
+                <select
+                  className="form-select"
+                  value={payoutModal.paymentMethod}
+                  onChange={(e) => setPayoutModal(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                >
+                  <option value="UPI">⚡ UPI Instant Payout (PhonePe, GPay, Paytm, BHIM)</option>
+                  <option value="NEFT">Bank Transfer (NEFT/IMPS)</option>
+                  <option value="CASH">Cash at Depot Counter</option>
+                </select>
+              </div>
+
+              {payoutModal.paymentMethod === 'UPI' && (
+                <div style={{
+                  backgroundColor: '#0F172A',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  marginBottom: '1rem',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#FCD34D', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <span>📱 Scan QR to Disburse via Depot Mobile</span>
+                  </div>
+
+                  {qrCodeUrl ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem' }}>
+                      <div style={{ background: '#FFF', padding: '8px', borderRadius: '8px', display: 'inline-block', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+                        <img src={qrCodeUrl} alt="UPI Payment QR Code" style={{ width: 170, height: 170, display: 'block' }} />
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#CBD5E1' }}>
+                        Scan using PhonePe / Google Pay / Paytm to disburse <b>{formatCurrency(payoutAmount)}</b> directly.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '1rem', color: '#94A3B8', fontSize: '0.85rem' }}>
+                      Please provide a valid Driver UPI ID / VPA below to generate dynamic scan-and-pay QR code.
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: '0.85rem', textAlign: 'left' }}>
+                    <label className="form-label" style={{ fontSize: '0.78rem', color: '#94A3B8' }}>Driver UPI ID / VPA</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="e.g. 9876543210@paytm or name@okaxis"
+                        value={currentUpi}
+                        onChange={(e) => setPayoutModal(prev => ({ ...prev, driverUpi: e.target.value }))}
+                        style={{ fontSize: '0.85rem' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ whiteSpace: 'nowrap' }}
+                        onClick={() => {
+                          if (currentUpi) {
+                            navigator.clipboard.writeText(currentUpi);
+                            setPayoutModal(prev => ({ ...prev, copied: true }));
+                            setTimeout(() => setPayoutModal(prev => ({ ...prev, copied: false })), 2000);
+                          }
+                        }}
+                      >
+                        {payoutModal.copied ? <Check size={14} color="#10B981" /> : 'Copy UPI'}
+                      </button>
+                      {upiUri && (
+                        <a
+                          href={upiUri}
+                          className="btn btn-primary btn-sm"
+                          style={{ whiteSpace: 'nowrap', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <ExternalLink size={13} /> Pay in App
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Transaction Reference Number / UTR</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. UPI/4291048201 or Receipt #"
+                  value={payoutModal.paymentRef}
+                  onChange={(e) => setPayoutModal(prev => ({ ...prev, paymentRef: e.target.value }))}
+                />
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Manual Adjustment Modal */}
